@@ -7,8 +7,8 @@ Set Padding 16
 Set Theme "Catppuccin Mocha"
 Set TypingSpeed 40ms
 
-# Create first session
-Type "realm my-feature -c --image alpine/git"
+# Create a session with custom image and command
+Type "realm my-feature --image ubuntu:latest -- bash"
 Sleep 500ms
 Enter
 Sleep 3s
@@ -27,11 +27,30 @@ Type "exit"
 Enter
 Sleep 2s
 
-# Create second session
-Type "realm bugfix -c --image alpine/git"
+# Resume with zero flags — session persists
+Type "realm my-feature"
 Sleep 500ms
 Enter
 Sleep 3s
+
+# Verify work is still there
+Type "git log --oneline -1"
+Enter
+Sleep 1.5s
+
+Type "exit"
+Enter
+Sleep 2s
+
+# Create session with extra Docker flags
+Type "realm bugfix --docker-args \"-e DEBUG=1\" --image ubuntu:latest -- bash"
+Sleep 500ms
+Enter
+Sleep 3s
+
+Type "echo $DEBUG"
+Enter
+Sleep 1.5s
 
 Type "exit"
 Enter
