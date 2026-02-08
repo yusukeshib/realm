@@ -151,22 +151,6 @@ pub fn list() -> Result<Vec<SessionSummary>> {
     Ok(sessions)
 }
 
-pub fn print_table(sessions: &[SessionSummary]) {
-    if sessions.is_empty() {
-        println!("No sessions found.");
-        return;
-    }
-
-    println!("{:<20} {:<30} {:<20} CREATED", "NAME", "PROJECT", "IMAGE");
-    println!("{:<20} {:<30} {:<20} -------", "----", "-------", "-----");
-    for s in sessions {
-        println!(
-            "{:<20} {:<30} {:<20} {}",
-            s.name, s.project_dir, s.image, s.created_at
-        );
-    }
-}
-
 pub fn remove_dir(name: &str) -> Result<()> {
     let dir = sessions_dir().join(name);
     fs::remove_dir_all(&dir).context(format!("Failed to remove session directory for '{}'", name))
@@ -465,32 +449,6 @@ mod tests {
             let content = fs::read_to_string(dir.join("resumed_at")).unwrap();
             assert!(content.ends_with("UTC"));
         });
-    }
-
-    #[test]
-    fn test_print_table_empty() {
-        // Just verify it doesn't panic
-        print_table(&[]);
-    }
-
-    #[test]
-    fn test_print_table_with_entries() {
-        // Just verify it doesn't panic
-        let sessions = vec![
-            SessionSummary {
-                name: "test".to_string(),
-                project_dir: "/tmp/test".to_string(),
-                image: "alpine/git".to_string(),
-                created_at: "2026-01-01 00:00:00 UTC".to_string(),
-            },
-            SessionSummary {
-                name: "another".to_string(),
-                project_dir: "/tmp/another".to_string(),
-                image: "ubuntu:latest".to_string(),
-                created_at: "2026-01-02 00:00:00 UTC".to_string(),
-            },
-        ];
-        print_table(&sessions);
     }
 
     #[test]

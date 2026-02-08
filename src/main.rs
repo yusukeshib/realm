@@ -1,6 +1,7 @@
 mod docker;
 mod git;
 mod session;
+mod tui;
 
 use anyhow::{bail, Result};
 use clap::Parser;
@@ -68,8 +69,15 @@ fn main() {
 
 fn cmd_list() -> Result<()> {
     let sessions = session::list()?;
-    session::print_table(&sessions);
-    Ok(())
+    if sessions.is_empty() {
+        println!("No sessions found.");
+        return Ok(());
+    }
+
+    match tui::select_session(&sessions)? {
+        Some(i) => cmd_resume(&sessions[i].name, vec![]),
+        None => Ok(()),
+    }
 }
 
 fn cmd_create(
