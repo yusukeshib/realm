@@ -9,7 +9,11 @@ use std::fs;
 use std::path::Path;
 
 #[derive(Parser)]
-#[command(name = "realm", about = "Sandboxed Docker environments for git repos")]
+#[command(
+    name = "realm",
+    about = "Sandboxed Docker environments for git repos",
+    after_help = "Commands:\n  realm upgrade    Upgrade realm to the latest version"
+)]
 struct Cli {
     /// Session name
     name: Option<String>,
