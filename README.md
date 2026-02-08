@@ -1,21 +1,53 @@
 # realm
 
-Sandboxed Docker environments for git repos.
+[![Crates.io](https://img.shields.io/crates/v/realm-cli)](https://crates.io/crates/realm-cli)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/yusukeshib/realm/actions/workflows/ci.yml/badge.svg)](https://github.com/yusukeshib/realm/actions/workflows/ci.yml)
 
-## How it works
+Sandboxed Docker environments for git repos — safe playgrounds for AI coding agents.
 
-Realm mounts your repo's `.git` directory into a Docker container. Your host working directory is never modified.
+![demo](./docs/demo.gif)
 
-- **`.git`-only mount** — The container gets full git functionality (commit, branch, diff) without touching your working tree
-- **Session isolation** — Each session works independently inside the container
-- **Host stays clean** — After container exit, realm runs `git reset` to fix the host index
+## Why realm?
+
+AI coding agents (Claude Code, Cursor, Copilot) are powerful — but letting them loose on your actual working tree is risky. Realm gives them a **safe, isolated sandbox** where they can go wild without consequences.
+
+- **Your code stays safe** — only `.git` is mounted, host files are never modified
+- **AI agents can experiment freely** — commit, branch, rewrite, break things — your working tree is untouched
+- **Zero cleanup** — the container is destroyed on exit
+- **Named sessions** — resume where you left off, run multiple experiments in parallel
+- **Bring your own toolchain** — works with any Docker image or Dockerfile
+
+## Quick Start
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yusukeshib/realm/main/install.sh | bash
+realm my-feature -c --image ubuntu:latest -- bash
+# You're now in an isolated container with full git access
+```
+
+## Claude Code Integration
+
+Realm is the ideal companion for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Run Claude Code inside a realm session and let it make risky changes, experiment with branches, and run tests — all fully isolated from your host.
+
+```bash
+realm ai-experiment -c --image node:20 -- claude
+```
+
+If your project needs specific tools, point realm at a Dockerfile:
+
+```bash
+realm ai-experiment -c --dockerfile ./Dockerfile -- claude
+```
+
+Everything the agent does stays inside the container. When you're done, delete the session and it's gone.
 
 ## Install
 
-### From source (requires Rust toolchain)
+### Quick install
 
 ```bash
-cargo install --git https://github.com/yusukeshib/realm
+curl -fsSL https://raw.githubusercontent.com/yusukeshib/realm/main/install.sh | bash
 ```
 
 ### From crates.io
@@ -24,10 +56,26 @@ cargo install --git https://github.com/yusukeshib/realm
 cargo install realm-cli
 ```
 
+### From source
+
+```bash
+cargo install --git https://github.com/yusukeshib/realm
+```
+
+### Nix
+
+```bash
+nix run github:yusukeshib/realm
+```
+
+### Binary download
+
+Pre-built binaries are available on the [GitHub Releases](https://github.com/yusukeshib/realm/releases) page.
+
 ## Usage
 
 ```bash
-realm                                               List all sessions
+realm                                               List all sessions (TUI)
 realm <name> [-- cmd...]                            Resume a session
 realm <name> -c [options] [-- cmd...]               Create a new session
 realm <name> -d                                     Delete a session
@@ -83,8 +131,6 @@ test                 /Users/you/projects/other      ubuntu:latest        2026-02
 realm my-feature -d
 ```
 
-This deletes the session metadata.
-
 ## Options
 
 | Option | Description |
@@ -96,25 +142,12 @@ This deletes the session metadata.
 | `--mount <path>` | Mount path inside the container (default: `/workspace`) |
 | `--dir <path>` | Project directory (default: current directory) |
 
-## Session Storage
-
-Sessions are stored in `~/.realm/sessions/{name}/` with:
-- `project_dir` — Absolute path to the git repo
-- `image` — Docker image used
-- `mount_path` — Container mount path
-- `created_at` — Timestamp of session creation
-- `resumed_at` — Timestamp of last resume (if applicable)
-- `dockerfile` — Path to Dockerfile (if `--dockerfile` was used)
-- `command` — Saved command args (if provided)
-
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
 | `REALM_DOCKERFILE` | Default Dockerfile path (same as `--dockerfile`) |
 | `REALM_DOCKER_ARGS` | Extra Docker flags (e.g., `--network host`, additional `-v` mounts) |
-
-Examples:
 
 ```bash
 # Always use your custom Dockerfile
@@ -124,7 +157,13 @@ export REALM_DOCKERFILE=~/my-realm/Dockerfile
 REALM_DOCKER_ARGS="--network host -v /data:/data:ro" realm my-session -c
 ```
 
-## Security Model
+## How It Works
+
+Realm mounts your repo's `.git` directory into a Docker container. Your host working directory is never modified.
+
+- **`.git`-only mount** — The container gets full git functionality (commit, branch, diff) without touching your working tree
+- **Session isolation** — Each session works independently inside the container
+- **Host stays clean** — After container exit, realm runs `git reset` to fix the host index
 
 | Aspect | Protection |
 |--------|------------|
