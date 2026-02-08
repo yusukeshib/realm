@@ -1,5 +1,7 @@
 # realm
 
+[日本語](README.ja.md)
+
 [![Crates.io](https://img.shields.io/crates/v/realm-cli)](https://crates.io/crates/realm-cli)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/yusukeshib/realm/actions/workflows/ci.yml/badge.svg)](https://github.com/yusukeshib/realm/actions/workflows/ci.yml)
@@ -7,37 +9,6 @@
 Sandboxed Docker environments for git repos — safe playgrounds for AI coding agents.
 
 ![demo](./docs/demo.gif)
-
-## My usage
-
-```sh
-> ls -al | grep Dockerfile
-.rw-r--r--@ 2.2k yusuke  8 Feb 10:42 Dockerfile
-
-# build my own image for sandbox
-> docker build -t mydev
-
-# run
-> docker run -it mydev
-
-# process your auth of claude
-% claude
-% exit
-
-# save image for my auth action for claude
-> docker commit <container_id> mydev:authorized
-
-# put my dev image for realm in .zshrc
-> export REALM_DEFAULT_IMAGE=mydev:authorized
-
-# Then, you can use realm for claude conveniently
-> realm new-quality-improvement
-
-# you can immediately run claude
-% claude
-
-
-```
 
 ## Why realm?
 
@@ -48,24 +19,6 @@ AI coding agents (Claude Code, Cursor, Copilot) are powerful — but letting the
 - **Persistent sessions** — exit and resume where you left off, files are preserved
 - **Named sessions** — run multiple experiments in parallel
 - **Bring your own toolchain** — works with any Docker image
-
-## Quick Start
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/yusukeshib/realm/main/install.sh | bash
-realm my-feature --image ubuntu:latest -- bash
-# You're now in an isolated container with full git access
-```
-
-## Claude Code Integration
-
-Realm is the ideal companion for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Run Claude Code inside a realm session and let it make risky changes, experiment with branches, and run tests — all fully isolated from your host.
-
-```bash
-realm ai-experiment --image node:20 -- claude
-```
-
-Everything the agent does stays inside the container. When you're done, delete the session and it's gone.
 
 ## Install
 
@@ -96,6 +49,69 @@ nix run github:yusukeshib/realm
 ### Binary download
 
 Pre-built binaries are available on the [GitHub Releases](https://github.com/yusukeshib/realm/releases) page.
+
+## Quick Start
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yusukeshib/realm/main/install.sh | bash
+realm my-feature --image ubuntu:latest -- bash
+# You're now in an isolated container with full git access
+```
+
+Realm must be run inside a git repository — it clones the current repo into the container.
+
+For a zero-flags workflow, see [Custom Image Setup](#custom-image-setup) below.
+
+## Custom Image Setup
+
+The recommended way to use realm: build your image once, set a couple of env vars, and never pass flags again.
+
+**1. Create a Dockerfile with your toolchain**
+
+Include whatever tools your workflow needs (languages, runtimes, CLI tools, etc.).
+
+**2. Build the image**
+
+```bash
+docker build -t mydev .
+```
+
+**3. Run interactively to configure auth/state**
+
+Some tools (like Claude Code) need interactive authentication that can't be baked into a Dockerfile. Run the image, complete the setup, then save the result:
+
+```bash
+docker run -it mydev
+# Inside the container: run `claude` to authenticate, install extras, etc.
+# When done:
+exit
+```
+
+```bash
+# Find the container ID and commit the configured state
+docker commit <container_id> mydev:ready
+```
+
+**4. Set environment variables**
+
+Add these to your `.zshrc` or `.bashrc`:
+
+```bash
+export REALM_DEFAULT_IMAGE=mydev:ready        # your custom image
+export REALM_DOCKER_ARGS="--network host"     # any extra Docker flags you always want
+```
+
+**5. Done — just use realm**
+
+With those env vars set, every session uses your custom image with zero flags:
+
+```bash
+# That's it. From now on:
+realm feature-1
+realm bugfix-auth
+realm experiment-v2
+# Each gets an isolated sandbox with your full toolchain.
+```
 
 ## Usage
 
@@ -156,12 +172,14 @@ realm my-feature -d
 |--------|-------------|
 | `-d` | Delete the session |
 | `--image <image>` | Docker image to use (default: `alpine/git`) - only used when creating |
-| `--mount <path>` | Mount path inside the container (default: `/workspace`) - only used when creating |
+| `--mount <path>` | Mount path inside the container (default: `/workspace/<dir-name>`) - only used when creating |
 | `--dir <path>` | Project directory (default: current directory) - only used when creating |
 | `-e, --env <KEY[=VALUE]>` | Environment variable to pass to container - only used when creating |
 | `--no-ssh` | Disable SSH agent forwarding (enabled by default) - only used when creating |
 
 ## Environment Variables
+
+These let you configure defaults so you can skip CLI flags entirely. Set them in your `.zshrc` or `.bashrc` and every `realm <name>` invocation uses them automatically.
 
 | Variable | Description |
 |----------|-------------|
@@ -169,8 +187,8 @@ realm my-feature -d
 | `REALM_DOCKER_ARGS` | Extra Docker flags (e.g., `--network host`, additional `-v` mounts) |
 
 ```bash
-# Pass extra Docker flags
-REALM_DOCKER_ARGS="--network host -v /data:/data:ro" realm my-session -c
+# Example: always use host networking and mount a shared data volume
+REALM_DOCKER_ARGS="--network host -v /data:/data:ro" realm my-session
 ```
 
 ## How It Works
@@ -189,23 +207,38 @@ On first run, `git clone --local` creates an independent copy of your repo in th
 
 ## SSH Agent Forwarding
 
-SSH agent forwarding is enabled by default. This lets you use `git clone`, `ssh`, and other tools that rely on your SSH keys without copying them into the container.
+**The problem**: Docker containers can't normally access your host SSH keys. On macOS it's even harder — Docker runs in a VM, so Unix sockets can't cross the VM boundary.
+
+**What realm does**: Automatically forwards the host's SSH agent into the container. `git push`, `git pull`, and `ssh` all work with your existing keys — no key copying needed.
+
+**How it works per platform**:
+
+- **macOS** (Docker Desktop / OrbStack): Mounts the VM-bridged socket at `/run/host-services/ssh-auth.sock`
+- **Linux**: Mounts `$SSH_AUTH_SOCK` directly into the container
+
+Realm also re-points the cloned repo's `origin` remote to the real URL (not the local clone path), so `git push origin` works out of the box.
 
 ```bash
 realm my-feature --image ubuntu:latest -- bash
 
 # Inside the container
 ssh-add -l          # should list your keys
-git clone git@github.com:user/repo.git
+git push origin main
 
 # To disable SSH forwarding
 realm my-feature --no-ssh -- bash
 ```
 
-On **macOS** (Docker Desktop / OrbStack), the socket at `/run/host-services/ssh-auth.sock` is mounted automatically. On **Linux**, the `$SSH_AUTH_SOCK` environment variable is used.
+## Claude Code Integration
+
+Realm is the ideal companion for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Run Claude Code inside a realm session and let it make risky changes, experiment with branches, and run tests — all fully isolated from your host.
+
+```bash
+realm ai-experiment --image node:20 -- claude
+```
+
+Everything the agent does stays inside the container. When you're done, delete the session and it's gone.
 
 ## License
 
 MIT
-
-
