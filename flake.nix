@@ -21,7 +21,7 @@
             lockFile = ./Cargo.lock;
           };
 
-          doCheck = false; # Integration tests require Nix runtime
+          nativeBuildInputs = [ pkgs.git ];
 
           meta = with pkgs.lib; {
             description = "Homebrew-style wrapper for Nix using flake.nix";
