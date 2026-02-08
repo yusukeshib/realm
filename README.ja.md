@@ -125,7 +125,7 @@ realm upgrade                                       最新版にアップグレ�
 ### セッションの作成または再開
 
 ```bash
-# デフォルト: alpine/git イメージ、sh シェル、カレントディレクトリ
+# デフォルト: alpine:latest イメージ、sh シェル、カレントディレクトリ
 realm my-feature
 
 # カスタムイメージでbashを使用（作成時のみ有効）
@@ -150,7 +150,7 @@ realm
 ```
 NAME                 PROJECT                        IMAGE                CREATED
 ----                 -------                        -----                -------
-my-feature           /Users/you/projects/app        alpine/git           2026-02-07 12:00:00 UTC
+my-feature           /Users/you/projects/app        alpine:latest           2026-02-07 12:00:00 UTC
 test                 /Users/you/projects/other      ubuntu:latest        2026-02-07 12:30:00 UTC
 ```
 
@@ -165,7 +165,7 @@ realm my-feature -d
 | オプション | 説明 |
 |--------|-------------|
 | `-d` | セッションを削除 |
-| `--image <image>` | 使用するDockerイメージ（デフォルト: `alpine/git`）- 作成時のみ有効 |
+| `--image <image>` | 使用するDockerイメージ（デフォルト: `alpine:latest`）- 作成時のみ有効 |
 | `--docker-args <args>` | 追加のDockerフラグ（例: `-e KEY=VALUE`、`-v /host:/container`）。`$REALM_DOCKER_ARGS` を上書き |
 | `--no-ssh` | SSHエージェント転送を無効化（デフォルトは有効） |
 
@@ -175,7 +175,7 @@ CLIフラグを完全に省略するためのデフォルト設定です。`.zsh
 
 | 変数 | 説明 |
 |----------|-------------|
-| `REALM_DEFAULT_IMAGE` | 新規セッションのデフォルトDockerイメージ（デフォルト: `alpine/git`） |
+| `REALM_DEFAULT_IMAGE` | 新規セッションのデフォルトDockerイメージ（デフォルト: `alpine:latest`） |
 | `REALM_DOCKER_ARGS` | デフォルトの追加Dockerフラグ。`--docker-args` が指定されていない場合に使用 |
 
 ```bash

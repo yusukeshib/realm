@@ -325,7 +325,7 @@ mod tests {
             let sess = Session {
                 name: "meta-test".to_string(),
                 project_dir: "/tmp/p".to_string(),
-                image: "alpine/git".to_string(),
+                image: "alpine:latest".to_string(),
                 mount_path: "/workspace".to_string(),
                 command: vec![],
                 env: vec![],
@@ -389,7 +389,7 @@ mod tests {
             let sess = Session {
                 name: "exists-test".to_string(),
                 project_dir: "/tmp/p".to_string(),
-                image: "alpine/git".to_string(),
+                image: "alpine:latest".to_string(),
                 mount_path: "/workspace".to_string(),
                 command: vec![],
                 env: vec![],
@@ -415,7 +415,7 @@ mod tests {
                 let sess = Session {
                     name: name.to_string(),
                     project_dir: format!("/tmp/{}", name),
-                    image: "alpine/git".to_string(),
+                    image: "alpine:latest".to_string(),
                     mount_path: "/workspace".to_string(),
                     command: vec![],
                     env: vec![],
@@ -461,7 +461,7 @@ mod tests {
             let sess = Session {
                 name: "to-remove".to_string(),
                 project_dir: "/tmp/p".to_string(),
-                image: "alpine/git".to_string(),
+                image: "alpine:latest".to_string(),
                 mount_path: "/workspace".to_string(),
                 command: vec![],
                 env: vec![],
@@ -489,7 +489,7 @@ mod tests {
             let sess = Session {
                 name: "resume-test".to_string(),
                 project_dir: "/tmp/p".to_string(),
-                image: "alpine/git".to_string(),
+                image: "alpine:latest".to_string(),
                 mount_path: "/workspace".to_string(),
                 command: vec![],
                 env: vec![],
@@ -527,7 +527,7 @@ mod tests {
             let sess = Session {
                 name: "cmd-format".to_string(),
                 project_dir: "/tmp/p".to_string(),
-                image: "alpine/git".to_string(),
+                image: "alpine:latest".to_string(),
                 mount_path: "/workspace".to_string(),
                 command: vec!["bash".to_string(), "-c".to_string(), "echo hi".to_string()],
                 env: vec![],
@@ -547,7 +547,7 @@ mod tests {
             let sess = Session {
                 name: "env-test".to_string(),
                 project_dir: "/tmp/project".to_string(),
-                image: "alpine/git".to_string(),
+                image: "alpine:latest".to_string(),
                 mount_path: "/workspace".to_string(),
                 command: vec![],
                 env: vec!["FOO=bar".to_string(), "BAZ".to_string()],
@@ -570,7 +570,7 @@ mod tests {
             let sess = Session {
                 name: "no-env".to_string(),
                 project_dir: "/tmp/project".to_string(),
-                image: "alpine/git".to_string(),
+                image: "alpine:latest".to_string(),
                 mount_path: "/workspace".to_string(),
                 command: vec![],
                 env: vec![],

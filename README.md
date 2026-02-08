@@ -125,7 +125,7 @@ realm upgrade                                       Upgrade to latest version
 ### Create or resume a session
 
 ```bash
-# Default: alpine/git image, sh shell, current directory
+# Default: alpine:latest image, sh shell, current directory
 realm my-feature
 
 # Custom image with bash (only used when creating)
@@ -150,7 +150,7 @@ realm
 ```
 NAME                 PROJECT                        IMAGE                CREATED
 ----                 -------                        -----                -------
-my-feature           /Users/you/projects/app        alpine/git           2026-02-07 12:00:00 UTC
+my-feature           /Users/you/projects/app        alpine:latest           2026-02-07 12:00:00 UTC
 test                 /Users/you/projects/other      ubuntu:latest        2026-02-07 12:30:00 UTC
 ```
 
@@ -165,7 +165,7 @@ realm my-feature -d
 | Option | Description |
 |--------|-------------|
 | `-d` | Delete the session |
-| `--image <image>` | Docker image to use (default: `alpine/git`) - only used when creating |
+| `--image <image>` | Docker image to use (default: `alpine:latest`) - only used when creating |
 | `--docker-args <args>` | Extra Docker flags (e.g. `-e KEY=VALUE`, `-v /host:/container`). Overrides `$REALM_DOCKER_ARGS` |
 | `--no-ssh` | Disable SSH agent forwarding (enabled by default) |
 
@@ -175,7 +175,7 @@ These let you configure defaults so you can skip CLI flags entirely. Set them in
 
 | Variable | Description |
 |----------|-------------|
-| `REALM_DEFAULT_IMAGE` | Default Docker image for new sessions (default: `alpine/git`) |
+| `REALM_DEFAULT_IMAGE` | Default Docker image for new sessions (default: `alpine:latest`) |
 | `REALM_DOCKER_ARGS` | Default extra Docker flags, used when `--docker-args` is not provided |
 
 ```bash

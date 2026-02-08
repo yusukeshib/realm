@@ -315,7 +315,7 @@ mod tests {
     fn default_config<'a>() -> DockerRunConfig<'a> {
         DockerRunConfig {
             name: "sess",
-            image: "alpine/git",
+            image: "alpine:latest",
             mount_path: "/workspace",
             cmd: &[],
             env: &[],
@@ -348,7 +348,7 @@ mod tests {
         assert_eq!(args[8], "-w");
         assert_eq!(args[9], "/workspace");
         // image
-        assert_eq!(args[10], "alpine/git");
+        assert_eq!(args[10], "alpine:latest");
         assert_eq!(args.len(), 11);
     }
 
@@ -439,7 +439,7 @@ mod tests {
         .unwrap();
 
         // Should still work, just no extra args
-        assert!(args.contains(&"alpine/git".to_string()));
+        assert!(args.contains(&"alpine:latest".to_string()));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-pub const DEFAULT_IMAGE: &str = "alpine/git";
+pub const DEFAULT_IMAGE: &str = "alpine:latest";
 
 /// Return the user's home directory.
 /// Uses the HOME environment variable with a fallback to "." if unset.
