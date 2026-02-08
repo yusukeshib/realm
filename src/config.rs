@@ -21,7 +21,9 @@ pub fn resolve(input: RealmConfigInput) -> RealmConfig {
     let mount_path = input
         .mount_path
         .unwrap_or_else(|| derive_mount_path(&input.project_dir));
-    let image = input.image.unwrap_or_else(|| DEFAULT_IMAGE.to_string());
+    let image = input.image.unwrap_or_else(|| {
+        std::env::var("REALM_DEFAULT_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE.to_string())
+    });
 
     RealmConfig {
         name: input.name,
@@ -122,6 +124,34 @@ mod tests {
         });
 
         assert_eq!(config.image, "ubuntu:latest");
+    }
+
+    #[test]
+    fn test_resolve_env_default_image() {
+        std::env::set_var("REALM_DEFAULT_IMAGE", "ubuntu:latest");
+        let config = resolve(RealmConfigInput {
+            name: "test".to_string(),
+            image: None,
+            mount_path: None,
+            project_dir: "/home/user/myproject".to_string(),
+            command: vec![],
+        });
+        assert_eq!(config.image, "ubuntu:latest");
+        std::env::remove_var("REALM_DEFAULT_IMAGE");
+    }
+
+    #[test]
+    fn test_resolve_image_flag_overrides_env() {
+        std::env::set_var("REALM_DEFAULT_IMAGE", "ubuntu:latest");
+        let config = resolve(RealmConfigInput {
+            name: "test".to_string(),
+            image: Some("python:3.11".to_string()),
+            mount_path: None,
+            project_dir: "/home/user/myproject".to_string(),
+            command: vec![],
+        });
+        assert_eq!(config.image, "python:3.11");
+        std::env::remove_var("REALM_DEFAULT_IMAGE");
     }
 
     #[test]

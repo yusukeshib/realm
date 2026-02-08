@@ -27,7 +27,7 @@ struct Cli {
     #[arg(short = 'd')]
     delete: bool,
 
-    /// Docker image to use (default: alpine/git)
+    /// Docker image to use (default: $REALM_DEFAULT_IMAGE or alpine/git)
     #[arg(long)]
     image: Option<String>,
 

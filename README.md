@@ -136,6 +136,7 @@ realm my-feature -d
 
 | Variable | Description |
 |----------|-------------|
+| `REALM_DEFAULT_IMAGE` | Default Docker image for new sessions (default: `alpine/git`) |
 | `REALM_DOCKER_ARGS` | Extra Docker flags (e.g., `--network host`, additional `-v` mounts) |
 
 ```bash
