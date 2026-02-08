@@ -131,6 +131,7 @@ fn cmd_create(
     };
     session::save(&sess)?;
 
+    docker::remove_container(name);
     let exit_code = docker::run_container(
         name,
         &cfg.project_dir,
@@ -156,19 +157,23 @@ fn cmd_resume(name: &str, cmd: Vec<String>) -> Result<()> {
     println!("Resuming session '{}'...", name);
     session::touch_resumed_at(name)?;
 
-    let final_cmd = if cmd.is_empty() {
-        sess.command.clone()
+    let exit_code = if cmd.is_empty() && docker::container_exists(name) {
+        docker::start_container(name)?
     } else {
-        cmd
+        let final_cmd = if cmd.is_empty() {
+            sess.command.clone()
+        } else {
+            cmd
+        };
+        docker::remove_container(name);
+        docker::run_container(
+            name,
+            &sess.project_dir,
+            &sess.image,
+            &sess.mount_path,
+            &final_cmd,
+        )?
     };
-
-    let exit_code = docker::run_container(
-        name,
-        &sess.project_dir,
-        &sess.image,
-        &sess.mount_path,
-        &final_cmd,
-    )?;
     git::reset_index(&sess.project_dir);
     std::process::exit(exit_code);
 }
@@ -289,6 +294,7 @@ fn cmd_delete(name: &str) -> Result<()> {
         bail!("Session '{}' not found.", name);
     }
 
+    docker::remove_container(name);
     session::remove_dir(name)?;
     println!("Session '{}' removed.", name);
     Ok(())

@@ -50,8 +50,9 @@ pub fn build_run_args(
 ) -> Result<Vec<String>> {
     let mut args: Vec<String> = vec![
         "run".into(),
-        "--rm".into(),
         "-it".into(),
+        "--name".into(),
+        format!("realm-{}", name),
         "--hostname".into(),
         format!("realm-{}", name),
         "--tmpfs".into(),
@@ -121,6 +122,35 @@ pub fn run_container(
     Ok(status.code().unwrap_or(1))
 }
 
+pub fn container_exists(name: &str) -> bool {
+    Command::new("docker")
+        .args(["container", "inspect", &format!("realm-{}", name)])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+pub fn start_container(name: &str) -> Result<i32> {
+    let status = Command::new("docker")
+        .args(["start", "-ai", &format!("realm-{}", name)])
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()?;
+
+    Ok(status.code().unwrap_or(1))
+}
+
+pub fn remove_container(name: &str) {
+    let _ = Command::new("docker")
+        .args(["rm", "-f", &format!("realm-{}", name)])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,19 +170,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(args[0], "run");
-        assert_eq!(args[1], "--rm");
-        assert_eq!(args[2], "-it");
-        assert_eq!(args[3], "--hostname");
-        assert_eq!(args[4], "realm-test-session");
-        assert_eq!(args[5], "--tmpfs");
-        assert_eq!(args[6], "/workspace:exec,mode=1777");
-        assert_eq!(args[7], "-v");
-        assert_eq!(args[8], "/home/user/project/.git:/workspace/.git");
-        assert_eq!(args[9], "-w");
-        assert_eq!(args[10], "/workspace");
+        assert_eq!(args[1], "-it");
+        assert_eq!(args[2], "--name");
+        assert_eq!(args[3], "realm-test-session");
+        assert_eq!(args[4], "--hostname");
+        assert_eq!(args[5], "realm-test-session");
+        assert_eq!(args[6], "--tmpfs");
+        assert_eq!(args[7], "/workspace:exec,mode=1777");
+        assert_eq!(args[8], "-v");
+        assert_eq!(args[9], "/home/user/project/.git:/workspace/.git");
+        assert_eq!(args[10], "-w");
+        assert_eq!(args[11], "/workspace");
         // image
-        assert_eq!(args[11], "alpine/git");
-        assert_eq!(args.len(), 12);
+        assert_eq!(args[12], "alpine/git");
+        assert_eq!(args.len(), 13);
     }
 
     #[test]
@@ -341,5 +372,40 @@ mod tests {
         .unwrap();
 
         assert!(args.contains(&"realm-my-session".to_string()));
+    }
+
+    #[test]
+    fn test_build_run_args_no_rm_flag() {
+        let args = build_run_args(
+            "sess",
+            "/tmp/project",
+            "alpine/git",
+            "/workspace",
+            &[],
+            "/home/user",
+            false,
+            None,
+        )
+        .unwrap();
+
+        assert!(!args.contains(&"--rm".to_string()));
+    }
+
+    #[test]
+    fn test_build_run_args_has_name() {
+        let args = build_run_args(
+            "my-session",
+            "/tmp/project",
+            "alpine/git",
+            "/workspace",
+            &[],
+            "/home/user",
+            false,
+            None,
+        )
+        .unwrap();
+
+        let name_pos = args.iter().position(|a| a == "--name").unwrap();
+        assert_eq!(args[name_pos + 1], "realm-my-session");
     }
 }
