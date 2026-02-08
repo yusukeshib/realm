@@ -83,13 +83,11 @@ run_container() {
     shift 4
     # Remaining args are the command to run
 
-    local branch="realm/${name}"
-
     DOCKER_ARGS=(
         --rm -it
+        --entrypoint ""
         -v "${project_dir}/.git:${mount_path}/.git"
         -w "$mount_path"
-        -e "REALM_BRANCH=${branch}"
     )
 
     # Mount ~/.gitconfig read-only if it exists
@@ -104,9 +102,9 @@ run_container() {
 
     local shell_cmd
     if [[ $# -gt 0 ]]; then
-        shell_cmd="git checkout \"\$REALM_BRANCH\" 2>/dev/null; exec \"\$@\""
+        shell_cmd="git checkout . 2>/dev/null; exec \"\$@\""
     else
-        shell_cmd="git checkout \"\$REALM_BRANCH\" 2>/dev/null; exec sh"
+        shell_cmd="git checkout . 2>/dev/null; exec sh"
     fi
 
     set +e
