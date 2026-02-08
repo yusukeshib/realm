@@ -353,7 +353,7 @@ mod tests {
                     project_dir: format!("/tmp/{}", name),
                     image: "alpine/git".to_string(),
                     mount_path: "/workspace".to_string(),
-    
+
                     command: vec![],
                 };
                 save(&sess).unwrap();

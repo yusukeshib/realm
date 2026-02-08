@@ -90,7 +90,7 @@ mod tests {
                 project_dir: "/home/user/myproject".to_string(),
                 image: DEFAULT_IMAGE.to_string(),
                 mount_path: "/myproject".to_string(),
-    
+
                 command: vec![],
             }
         );

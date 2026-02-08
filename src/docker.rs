@@ -342,5 +342,4 @@ mod tests {
 
         assert!(args.contains(&"realm-my-session".to_string()));
     }
-
 }
