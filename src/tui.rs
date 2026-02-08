@@ -32,14 +32,16 @@ pub fn select_session(sessions: &[SessionSummary]) -> Result<Option<usize>> {
 
     loop {
         terminal.draw(|f| {
-            let header =
-                Row::new(["NAME", "PROJECT", "IMAGE", "CREATED"]).style(Style::default().dim());
+            let header = Row::new(["NAME", "STATUS", "PROJECT", "IMAGE", "CREATED"])
+                .style(Style::default().dim());
 
             let rows: Vec<Row> = sessions
                 .iter()
                 .map(|s| {
+                    let status = if s.running { "running" } else { "" };
                     Row::new([
                         s.name.as_str(),
+                        status,
                         s.project_dir.as_str(),
                         s.image.as_str(),
                         s.created_at.as_str(),
@@ -49,6 +51,7 @@ pub fn select_session(sessions: &[SessionSummary]) -> Result<Option<usize>> {
 
             let widths = [
                 Constraint::Min(15),
+                Constraint::Min(10),
                 Constraint::Min(30),
                 Constraint::Min(20),
                 Constraint::Min(22),

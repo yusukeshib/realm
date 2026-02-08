@@ -77,10 +77,16 @@ fn main() {
 }
 
 fn cmd_list() -> Result<i32> {
-    let sessions = session::list()?;
+    let mut sessions = session::list()?;
     if sessions.is_empty() {
         println!("No sessions found.");
         return Ok(0);
+    }
+
+    docker::check()?;
+    let running = docker::running_sessions();
+    for s in &mut sessions {
+        s.running = running.contains(&s.name);
     }
 
     match tui::select_session(&sessions)? {
@@ -172,6 +178,15 @@ fn cmd_resume(name: &str, cmd: Vec<String>) -> Result<i32> {
     }
 
     docker::check()?;
+
+    if docker::container_is_running(name) {
+        bail!(
+            "Session '{}' is already running in another terminal.\n\
+             To connect to it, run: docker exec -it realm-{} sh",
+            name,
+            name,
+        );
+    }
 
     println!("Resuming session '{}'...", name);
     session::touch_resumed_at(name)?;

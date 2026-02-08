@@ -35,6 +35,7 @@ pub struct SessionSummary {
     pub project_dir: String,
     pub image: String,
     pub created_at: String,
+    pub running: bool,
 }
 
 pub fn sessions_dir() -> PathBuf {
@@ -186,6 +187,7 @@ pub fn list() -> Result<Vec<SessionSummary>> {
             project_dir,
             image,
             created_at,
+            running: false,
         });
     }
 

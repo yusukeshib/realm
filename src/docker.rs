@@ -249,6 +249,39 @@ pub fn container_exists(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+pub fn container_is_running(name: &str) -> bool {
+    let output = Command::new("docker")
+        .args([
+            "container",
+            "inspect",
+            "-f",
+            "{{.State.Running}}",
+            &format!("realm-{}", name),
+        ])
+        .stderr(std::process::Stdio::null())
+        .output();
+    match output {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim() == "true",
+        _ => false,
+    }
+}
+
+/// Return the set of session names whose containers are currently running.
+pub fn running_sessions() -> std::collections::HashSet<String> {
+    let output = Command::new("docker")
+        .args(["ps", "--filter", "name=realm-", "--format", "{{.Names}}"])
+        .stderr(std::process::Stdio::null())
+        .output();
+    match output {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .filter_map(|line| line.strip_prefix("realm-"))
+            .map(|s| s.to_string())
+            .collect(),
+        _ => std::collections::HashSet::new(),
+    }
+}
+
 pub fn start_container(name: &str) -> Result<i32> {
     let status = Command::new("docker")
         .args(["start", "-ai", &format!("realm-{}", name)])
