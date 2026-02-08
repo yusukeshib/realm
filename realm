@@ -20,9 +20,9 @@ SESSIONS_DIR="${HOME}/.realm/sessions"
 
 usage() {
     echo "Usage:" >&2
+    echo "  realm switch                                        List all sessions" >&2
     echo "  realm switch <name> [-- cmd...]                    Switch to a session" >&2
     echo "  realm switch -c <name> [options] [dir] [-- cmd...] Create and switch to a new session" >&2
-    echo "  realm list                                          List all sessions" >&2
     echo "  realm remove <name>                                 Delete session" >&2
     echo "  realm upgrade                                       Upgrade to latest version" >&2
     echo "" >&2
@@ -133,9 +133,13 @@ cmd_switch() {
 
     local name="${1:-}"
     if [[ -z "$name" ]]; then
-        echo "Error: Session name is required." >&2
-        echo "Usage: realm switch [-c] <name> [options] [-- cmd...]" >&2
-        exit 1
+        if [[ "$create" == true ]]; then
+            echo "Error: Session name is required." >&2
+            echo "Usage: realm switch -c <name> [options] [-- cmd...]" >&2
+            exit 1
+        fi
+        cmd_list
+        return
     fi
     shift
     validate_name "$name"
@@ -408,9 +412,6 @@ case "${1:-}" in
     switch)
         shift
         cmd_switch "$@"
-        ;;
-    list)
-        cmd_list
         ;;
     remove)
         shift
