@@ -128,24 +128,18 @@ realm upgrade                                       Upgrade to latest version
 # Default: alpine/git image, sh shell, current directory
 realm my-feature
 
-# Specify a project directory (only used when creating)
-realm my-feature --dir ~/projects/my-app
-
 # Custom image with bash (only used when creating)
 realm my-feature --image ubuntu:latest -- bash
 
-# Custom mount path inside container (only used when creating)
-realm my-feature --mount /src
-
-# Environment variables (only used when creating)
-realm my-feature -e KEY=VALUE -e ANOTHER_KEY
+# Extra Docker flags (env vars, volumes, network, etc.)
+realm my-feature --docker-args "-e KEY=VALUE -v /host:/container --network host"
 
 # If session exists, it resumes with original configuration
 # If session doesn't exist, it creates a new one
 realm my-feature
 ```
 
-Sessions are automatically created if they don't exist. If a session already exists, create-time options like `--image`, `--mount`, `--dir`, and `-e` are ignored when resuming.
+Sessions are automatically created if they don't exist. If a session already exists, create-time options like `--image` are ignored when resuming. Runtime options like `--docker-args` and `--no-ssh` apply on every run.
 
 ### List sessions
 
@@ -172,10 +166,8 @@ realm my-feature -d
 |--------|-------------|
 | `-d` | Delete the session |
 | `--image <image>` | Docker image to use (default: `alpine/git`) - only used when creating |
-| `--mount <path>` | Mount path inside the container (default: `/workspace/<dir-name>`) - only used when creating |
-| `--dir <path>` | Project directory (default: current directory) - only used when creating |
-| `-e, --env <KEY[=VALUE]>` | Environment variable to pass to container - only used when creating |
-| `--no-ssh` | Disable SSH agent forwarding (enabled by default) - only used when creating |
+| `--docker-args <args>` | Extra Docker flags (e.g. `-e KEY=VALUE`, `-v /host:/container`). Overrides `$REALM_DOCKER_ARGS` |
+| `--no-ssh` | Disable SSH agent forwarding (enabled by default) |
 
 ## Environment Variables
 
@@ -184,11 +176,15 @@ These let you configure defaults so you can skip CLI flags entirely. Set them in
 | Variable | Description |
 |----------|-------------|
 | `REALM_DEFAULT_IMAGE` | Default Docker image for new sessions (default: `alpine/git`) |
-| `REALM_DOCKER_ARGS` | Extra Docker flags (e.g., `--network host`, additional `-v` mounts) |
+| `REALM_DOCKER_ARGS` | Default extra Docker flags, used when `--docker-args` is not provided |
 
 ```bash
-# Example: always use host networking and mount a shared data volume
-REALM_DOCKER_ARGS="--network host -v /data:/data:ro" realm my-session
+# Set default Docker flags for all sessions
+export REALM_DOCKER_ARGS="--network host -v /data:/data:ro"
+realm my-session
+
+# Override with --docker-args for a specific session
+realm my-session --docker-args "-e DEBUG=1"
 ```
 
 ## How It Works

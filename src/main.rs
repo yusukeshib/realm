@@ -24,21 +24,14 @@ struct Cli {
     #[arg(short = 'd')]
     delete: bool,
 
-    /// Environment variables to pass to container (e.g. -e KEY or -e KEY=VALUE)
-    #[arg(short, long = "env")]
-    env: Vec<String>,
-
     /// Docker image to use (default: $REALM_DEFAULT_IMAGE or alpine/git)
     #[arg(long)]
     image: Option<String>,
 
-    /// Mount path inside container (default: /<dir-name>)
-    #[arg(long = "mount")]
-    mount_path: Option<String>,
-
-    /// Project directory (default: current directory)
-    #[arg(long = "dir")]
-    dir: Option<String>,
+    /// Extra Docker flags (e.g. -e KEY=VALUE, -v /host:/container, --network host).
+    /// Overrides $REALM_DOCKER_ARGS when provided.
+    #[arg(long = "docker-args", allow_hyphen_values = true)]
+    docker_args: Option<String>,
 
     /// Disable SSH agent forwarding (enabled by default)
     #[arg(long = "no-ssh")]
@@ -52,6 +45,11 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
+    let docker_args = cli
+        .docker_args
+        .or_else(|| std::env::var("REALM_DOCKER_ARGS").ok())
+        .unwrap_or_default();
+
     let result = match cli.name.as_deref() {
         None if cli.delete => {
             eprintln!("Error: Session name required for -d.");
@@ -60,15 +58,7 @@ fn main() {
         None => cmd_list(),
         Some("upgrade") => cmd_upgrade(),
         Some(_) if cli.delete => cmd_delete(cli.name.as_deref().unwrap()),
-        Some(name) => cmd_create_or_resume(
-            name,
-            cli.image,
-            cli.mount_path,
-            cli.dir,
-            cli.cmd,
-            cli.env,
-            !cli.no_ssh,
-        ),
+        Some(name) => cmd_create_or_resume(name, cli.image, docker_args, cli.cmd, !cli.no_ssh),
     };
 
     match result {
@@ -94,7 +84,7 @@ fn cmd_list() -> Result<i32> {
     }
 
     match tui::select_session(&sessions)? {
-        Some(i) => cmd_resume(&sessions[i].name, vec![]),
+        Some(i) => cmd_resume(&sessions[i].name, "", vec![], true),
         None => Ok(0),
     }
 }
@@ -102,24 +92,16 @@ fn cmd_list() -> Result<i32> {
 fn cmd_create(
     name: &str,
     image: Option<String>,
-    mount_path: Option<String>,
-    dir: Option<String>,
+    docker_args: &str,
     cmd: Vec<String>,
-    env: Vec<String>,
     ssh: bool,
 ) -> Result<i32> {
     session::validate_name(name)?;
 
-    let project_dir = match dir {
-        Some(d) => fs::canonicalize(&d)
-            .map_err(|_| anyhow::anyhow!("Directory '{}' not found.", d))?
-            .to_string_lossy()
-            .to_string(),
-        None => fs::canonicalize(".")
-            .map_err(|_| anyhow::anyhow!("Cannot resolve current directory."))?
-            .to_string_lossy()
-            .to_string(),
-    };
+    let project_dir = fs::canonicalize(".")
+        .map_err(|_| anyhow::anyhow!("Cannot resolve current directory."))?
+        .to_string_lossy()
+        .to_string();
 
     if !git::is_repo(Path::new(&project_dir)) {
         bail!("'{}' is not a git repository.", project_dir);
@@ -130,10 +112,10 @@ fn cmd_create(
     let cfg = config::resolve(config::RealmConfigInput {
         name: name.to_string(),
         image,
-        mount_path,
+        mount_path: None,
         project_dir,
         command: cmd,
-        env,
+        env: vec![],
         ssh,
     });
 
@@ -148,6 +130,7 @@ fn cmd_create(
         &sess.mount_path,
         &sess.command,
         &sess.env,
+        docker_args,
         sess.ssh,
     )
 }
@@ -155,24 +138,21 @@ fn cmd_create(
 fn cmd_create_or_resume(
     name: &str,
     image: Option<String>,
-    mount_path: Option<String>,
-    dir: Option<String>,
+    docker_args: String,
     cmd: Vec<String>,
-    env: Vec<String>,
     ssh: bool,
 ) -> Result<i32> {
     // Check if session exists
     if session::session_exists(name) {
         // Session exists - resume it
-        // Ignore create-only options (image, mount_path, dir, env) if session exists
-        return cmd_resume(name, cmd);
+        return cmd_resume(name, &docker_args, cmd, ssh);
     }
 
     // Session doesn't exist - create it
-    cmd_create(name, image, mount_path, dir, cmd, env, ssh)
+    cmd_create(name, image, &docker_args, cmd, ssh)
 }
 
-fn cmd_resume(name: &str, cmd: Vec<String>) -> Result<i32> {
+fn cmd_resume(name: &str, docker_args: &str, cmd: Vec<String>, ssh: bool) -> Result<i32> {
     session::validate_name(name)?;
 
     let sess = session::load(name)?;
@@ -211,7 +191,8 @@ fn cmd_resume(name: &str, cmd: Vec<String>) -> Result<i32> {
             &sess.mount_path,
             &final_cmd,
             &sess.env,
-            sess.ssh,
+            docker_args,
+            ssh,
         )
     }
 }
@@ -385,20 +366,6 @@ mod tests {
     }
 
     #[test]
-    fn test_create_with_mount() {
-        let cli = parse(&["my-session", "--mount", "/src"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.mount_path.as_deref(), Some("/src"));
-    }
-
-    #[test]
-    fn test_create_with_dir() {
-        let cli = parse(&["my-session", "--dir", "/tmp/project"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.dir.as_deref(), Some("/tmp/project"));
-    }
-
-    #[test]
     fn test_with_command() {
         let cli = parse(&["my-session", "--", "bash", "-c", "echo hi"]);
         assert_eq!(cli.name.as_deref(), Some("my-session"));
@@ -418,19 +385,26 @@ mod tests {
             "full-session",
             "--image",
             "python:3.11",
-            "--mount",
-            "/app",
-            "--dir",
-            "/tmp/project",
+            "--docker-args",
+            "-e FOO=bar --network host",
             "--",
             "python",
             "main.py",
         ]);
         assert_eq!(cli.name.as_deref(), Some("full-session"));
         assert_eq!(cli.image.as_deref(), Some("python:3.11"));
-        assert_eq!(cli.mount_path.as_deref(), Some("/app"));
-        assert_eq!(cli.dir.as_deref(), Some("/tmp/project"));
+        assert_eq!(
+            cli.docker_args.as_deref(),
+            Some("-e FOO=bar --network host")
+        );
         assert_eq!(cli.cmd, vec!["python", "main.py"]);
+    }
+
+    #[test]
+    fn test_docker_args() {
+        let cli = parse(&["my-session", "--docker-args", "-e KEY=val -v /a:/b"]);
+        assert_eq!(cli.name.as_deref(), Some("my-session"));
+        assert_eq!(cli.docker_args.as_deref(), Some("-e KEY=val -v /a:/b"));
     }
 
     #[test]
@@ -438,34 +412,6 @@ mod tests {
         let cli = parse(&["my-session", "--"]);
         assert_eq!(cli.name.as_deref(), Some("my-session"));
         assert!(cli.cmd.is_empty());
-    }
-
-    #[test]
-    fn test_env_single() {
-        let cli = parse(&["my-session", "-e", "FOO=bar"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.env, vec!["FOO=bar"]);
-    }
-
-    #[test]
-    fn test_env_multiple() {
-        let cli = parse(&["my-session", "-e", "FOO", "-e", "BAR=baz"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.env, vec!["FOO", "BAR=baz"]);
-    }
-
-    #[test]
-    fn test_env_long_flag() {
-        let cli = parse(&["my-session", "--env", "KEY=val"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.env, vec!["KEY=val"]);
-    }
-
-    #[test]
-    fn test_env_empty_by_default() {
-        let cli = parse(&["my-session"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert!(cli.env.is_empty());
     }
 
     #[test]

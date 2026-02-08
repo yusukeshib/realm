@@ -128,24 +128,18 @@ realm upgrade                                       最新版にアップグレ�
 # デフォルト: alpine/git イメージ、sh シェル、カレントディレクトリ
 realm my-feature
 
-# プロジェクトディレクトリを指定（作成時のみ有効）
-realm my-feature --dir ~/projects/my-app
-
 # カスタムイメージでbashを使用（作成時のみ有効）
 realm my-feature --image ubuntu:latest -- bash
 
-# コンテナ内のマウントパスを指定（作成時のみ有効）
-realm my-feature --mount /src
-
-# 環境変数（作成時のみ有効）
-realm my-feature -e KEY=VALUE -e ANOTHER_KEY
+# 追加のDockerフラグ（環境変数、ボリューム、ネットワークなど）
+realm my-feature --docker-args "-e KEY=VALUE -v /host:/container --network host"
 
 # セッションが存在すれば元の設定で再開
 # 存在しなければ新規作成
 realm my-feature
 ```
 
-セッションが存在しない場合は自動的に作成されます。既存のセッションを再開する場合、`--image`、`--mount`、`--dir`、`-e` などの作成時オプションは無視されます。
+セッションが存在しない場合は自動的に作成されます。既存のセッションを再開する場合、`--image` などの作成時オプションは無視されます。`--docker-args` や `--no-ssh` などのランタイムオプションは毎回適用されます。
 
 ### セッション一覧
 
@@ -172,10 +166,8 @@ realm my-feature -d
 |--------|-------------|
 | `-d` | セッションを削除 |
 | `--image <image>` | 使用するDockerイメージ（デフォルト: `alpine/git`）- 作成時のみ有効 |
-| `--mount <path>` | コンテナ内のマウントパス（デフォルト: `/workspace/<dir-name>`）- 作成時のみ有効 |
-| `--dir <path>` | プロジェクトディレクトリ（デフォルト: カレントディレクトリ）- 作成時のみ有効 |
-| `-e, --env <KEY[=VALUE]>` | コンテナに渡す環境変数 - 作成時のみ有効 |
-| `--no-ssh` | SSHエージェント転送を無効化（デフォルトは有効）- 作成時のみ有効 |
+| `--docker-args <args>` | 追加のDockerフラグ（例: `-e KEY=VALUE`、`-v /host:/container`）。`$REALM_DOCKER_ARGS` を上書き |
+| `--no-ssh` | SSHエージェント転送を無効化（デフォルトは有効） |
 
 ## 環境変数
 
@@ -184,11 +176,15 @@ CLIフラグを完全に省略するためのデフォルト設定です。`.zsh
 | 変数 | 説明 |
 |----------|-------------|
 | `REALM_DEFAULT_IMAGE` | 新規セッションのデフォルトDockerイメージ（デフォルト: `alpine/git`） |
-| `REALM_DOCKER_ARGS` | 追加のDockerフラグ（例: `--network host`、追加の `-v` マウント） |
+| `REALM_DOCKER_ARGS` | デフォルトの追加Dockerフラグ。`--docker-args` が指定されていない場合に使用 |
 
 ```bash
-# 例: 常にホストネットワークとデータボリュームを使用
-REALM_DOCKER_ARGS="--network host -v /data:/data:ro" realm my-session
+# 全セッションにデフォルトのDockerフラグを設定
+export REALM_DOCKER_ARGS="--network host -v /data:/data:ro"
+realm my-session
+
+# 特定のセッションで --docker-args で上書き
+realm my-session --docker-args "-e DEBUG=1"
 ```
 
 ## 仕組み

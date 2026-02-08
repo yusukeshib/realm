@@ -197,6 +197,7 @@ pub fn build_run_args(cfg: &DockerRunConfig) -> Result<Vec<String>> {
     Ok(args)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_container(
     name: &str,
     project_dir: &str,
@@ -204,18 +205,24 @@ pub fn run_container(
     mount_path: &str,
     cmd: &[String],
     env: &[String],
+    docker_args: &str,
     ssh: bool,
 ) -> Result<i32> {
     let home = config::home_dir();
     let gitconfig = format!("{}/.gitconfig", home);
     let gitconfig_exists = Path::new(&gitconfig).exists();
-    let docker_args_env = std::env::var("REALM_DOCKER_ARGS").ok();
 
     ensure_workspace(&home, name, project_dir)?;
 
     if ssh && std::cfg!(target_os = "macos") {
         fix_ssh_socket_permissions(image);
     }
+
+    let docker_args_opt = if docker_args.is_empty() {
+        None
+    } else {
+        Some(docker_args)
+    };
 
     let args = build_run_args(&DockerRunConfig {
         name,
@@ -225,7 +232,7 @@ pub fn run_container(
         env,
         home: &home,
         gitconfig_exists,
-        docker_args_env: docker_args_env.as_deref(),
+        docker_args_env: docker_args_opt,
         ssh,
     })?;
 
