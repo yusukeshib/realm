@@ -53,6 +53,10 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.name.as_deref() {
+        None if cli.delete => {
+            eprintln!("Error: Session name required for -d.");
+            std::process::exit(1);
+        }
         None => cmd_list(),
         Some("upgrade") => cmd_upgrade(),
         Some(_) if cli.delete => cmd_delete(cli.name.as_deref().unwrap()),
@@ -462,5 +466,12 @@ mod tests {
         let cli = parse(&["my-session"]);
         assert_eq!(cli.name.as_deref(), Some("my-session"));
         assert!(cli.env.is_empty());
+    }
+
+    #[test]
+    fn test_delete_without_name() {
+        let cli = parse(&["-d"]);
+        assert!(cli.name.is_none());
+        assert!(cli.delete);
     }
 }

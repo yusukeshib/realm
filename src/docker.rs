@@ -523,6 +523,7 @@ mod tests {
 
     #[test]
     fn test_build_run_args_with_ssh() {
+        unsafe { std::env::set_var("SSH_AUTH_SOCK", "/tmp/fake-ssh-agent.sock") };
         let args = build_run_args(&DockerRunConfig {
             ssh: true,
             ..default_config()
@@ -530,7 +531,8 @@ mod tests {
         .unwrap();
 
         // Should have volume mount for the SSH socket
-        let vol_mount = format!("{}:{}", SSH_CONTAINER_PATH, SSH_CONTAINER_PATH);
+        let (host_path, container_path) = ssh_agent_paths().unwrap();
+        let vol_mount = format!("{}:{}", host_path, container_path);
         let vol_pos = args
             .iter()
             .position(|a| a.contains("ssh-auth.sock"))
