@@ -23,7 +23,11 @@
 
           nativeBuildInputs = [ pkgs.git ];
 
-          doCheck = false;
+          preCheck = ''
+            export HOME=$TMPDIR
+            git config --global user.name "Test"
+            git config --global user.email "test@test.com"
+          '';
 
           meta = with pkgs.lib; {
             description = "Homebrew-style wrapper for Nix using flake.nix";
