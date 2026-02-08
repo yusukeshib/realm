@@ -12,6 +12,7 @@ pub struct Session {
     pub image: String,
     pub mount_path: String,
     pub command: Vec<String>,
+    pub env: Vec<String>,
 }
 
 pub struct SessionSummary {
@@ -61,6 +62,10 @@ pub fn save(session: &Session) -> Result<()> {
         let content: Vec<&str> = session.command.iter().map(|s| s.as_str()).collect();
         fs::write(dir.join("command"), content.join("\n") + "\n")?;
     }
+    if !session.env.is_empty() {
+        let content: Vec<&str> = session.env.iter().map(|s| s.as_str()).collect();
+        fs::write(dir.join("env"), content.join("\n") + "\n")?;
+    }
 
     Ok(())
 }
@@ -94,12 +99,22 @@ pub fn load(name: &str) -> Result<Session> {
         })
         .unwrap_or_default();
 
+    let env = fs::read_to_string(dir.join("env"))
+        .map(|s| {
+            s.lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+
     Ok(Session {
         name: name.to_string(),
         project_dir,
         image,
         mount_path,
         command,
+        env,
     })
 }
 
@@ -224,6 +239,7 @@ mod tests {
                 mount_path: "/workspace".to_string(),
 
                 command: vec![],
+                env: vec![],
             };
             save(&sess).unwrap();
 
@@ -249,6 +265,7 @@ mod tests {
                     "-c".to_string(),
                     "echo hello".to_string(),
                 ],
+                env: vec![],
             };
             save(&sess).unwrap();
 
@@ -267,6 +284,7 @@ mod tests {
                 mount_path: "/workspace".to_string(),
 
                 command: vec![],
+                env: vec![],
             };
             save(&sess).unwrap();
 
@@ -330,6 +348,7 @@ mod tests {
                 mount_path: "/workspace".to_string(),
 
                 command: vec![],
+                env: vec![],
             };
             save(&sess).unwrap();
             assert!(session_exists("exists-test"));
@@ -353,8 +372,8 @@ mod tests {
                     project_dir: format!("/tmp/{}", name),
                     image: "alpine/git".to_string(),
                     mount_path: "/workspace".to_string(),
-
                     command: vec![],
+                    env: vec![],
                 };
                 save(&sess).unwrap();
             }
@@ -378,6 +397,7 @@ mod tests {
                 mount_path: "/workspace".to_string(),
 
                 command: vec![],
+                env: vec![],
             };
             save(&sess).unwrap();
 
@@ -399,6 +419,7 @@ mod tests {
                 mount_path: "/workspace".to_string(),
 
                 command: vec![],
+                env: vec![],
             };
             save(&sess).unwrap();
             assert!(session_exists("to-remove"));
@@ -426,6 +447,7 @@ mod tests {
                 mount_path: "/workspace".to_string(),
 
                 command: vec![],
+                env: vec![],
             };
             save(&sess).unwrap();
 
@@ -463,12 +485,56 @@ mod tests {
                 mount_path: "/workspace".to_string(),
 
                 command: vec!["bash".to_string(), "-c".to_string(), "echo hi".to_string()],
+                env: vec![],
             };
             save(&sess).unwrap();
 
             let dir = sessions_dir().join("cmd-format");
             let raw = fs::read_to_string(dir.join("command")).unwrap();
             assert_eq!(raw, "bash\n-c\necho hi\n");
+        });
+    }
+
+    #[test]
+    fn test_save_and_load_with_env() {
+        with_temp_home(|_| {
+            let sess = Session {
+                name: "env-test".to_string(),
+                project_dir: "/tmp/project".to_string(),
+                image: "alpine/git".to_string(),
+                mount_path: "/workspace".to_string(),
+                command: vec![],
+                env: vec!["FOO=bar".to_string(), "BAZ".to_string()],
+            };
+            save(&sess).unwrap();
+
+            let loaded = load("env-test").unwrap();
+            assert_eq!(loaded.env, vec!["FOO=bar", "BAZ"]);
+
+            let dir = sessions_dir().join("env-test");
+            let raw = fs::read_to_string(dir.join("env")).unwrap();
+            assert_eq!(raw, "FOO=bar\nBAZ\n");
+        });
+    }
+
+    #[test]
+    fn test_save_and_load_empty_env() {
+        with_temp_home(|_| {
+            let sess = Session {
+                name: "no-env".to_string(),
+                project_dir: "/tmp/project".to_string(),
+                image: "alpine/git".to_string(),
+                mount_path: "/workspace".to_string(),
+                command: vec![],
+                env: vec![],
+            };
+            save(&sess).unwrap();
+
+            let dir = sessions_dir().join("no-env");
+            assert!(!dir.join("env").exists());
+
+            let loaded = load("no-env").unwrap();
+            assert!(loaded.env.is_empty());
         });
     }
 }

@@ -27,6 +27,10 @@ struct Cli {
     #[arg(short = 'd')]
     delete: bool,
 
+    /// Environment variables to pass to container (e.g. -e KEY or -e KEY=VALUE)
+    #[arg(short, long = "env")]
+    env: Vec<String>,
+
     /// Docker image to use (default: $REALM_DEFAULT_IMAGE or alpine/git)
     #[arg(long)]
     image: Option<String>,
@@ -57,6 +61,7 @@ fn main() {
             cli.mount_path,
             cli.dir,
             cli.cmd,
+            cli.env,
         ),
         Some(name) => cmd_resume(name, cli.cmd),
     };
@@ -86,6 +91,7 @@ fn cmd_create(
     mount_path: Option<String>,
     dir: Option<String>,
     cmd: Vec<String>,
+    env: Vec<String>,
 ) -> Result<()> {
     session::validate_name(name)?;
 
@@ -120,6 +126,7 @@ fn cmd_create(
         mount_path,
         project_dir,
         command: cmd,
+        env,
     });
 
     let sess = session::Session {
@@ -128,6 +135,7 @@ fn cmd_create(
         image: cfg.image.clone(),
         mount_path: cfg.mount_path.clone(),
         command: cfg.command.clone(),
+        env: cfg.env.clone(),
     };
     session::save(&sess)?;
 
@@ -138,6 +146,7 @@ fn cmd_create(
         &cfg.image,
         &cfg.mount_path,
         &cfg.command,
+        &cfg.env,
     )?;
     git::reset_index(&cfg.project_dir);
     std::process::exit(exit_code);
@@ -172,6 +181,7 @@ fn cmd_resume(name: &str, cmd: Vec<String>) -> Result<()> {
             &sess.image,
             &sess.mount_path,
             &final_cmd,
+            &sess.env,
         )?
     };
     git::reset_index(&sess.project_dir);
@@ -427,5 +437,31 @@ mod tests {
         assert!(cli.create);
         assert_eq!(cli.name.as_deref(), Some("test-session"));
         assert_eq!(cli.image.as_deref(), Some("ubuntu:latest"));
+    }
+
+    #[test]
+    fn test_env_single() {
+        let cli = parse(&["my-session", "-c", "-e", "FOO=bar"]);
+        assert!(cli.create);
+        assert_eq!(cli.env, vec!["FOO=bar"]);
+    }
+
+    #[test]
+    fn test_env_multiple() {
+        let cli = parse(&["my-session", "-c", "-e", "FOO", "-e", "BAR=baz"]);
+        assert!(cli.create);
+        assert_eq!(cli.env, vec!["FOO", "BAR=baz"]);
+    }
+
+    #[test]
+    fn test_env_long_flag() {
+        let cli = parse(&["my-session", "-c", "--env", "KEY=val"]);
+        assert_eq!(cli.env, vec!["KEY=val"]);
+    }
+
+    #[test]
+    fn test_env_empty_by_default() {
+        let cli = parse(&["my-session", "-c"]);
+        assert!(cli.env.is_empty());
     }
 }

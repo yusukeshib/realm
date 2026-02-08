@@ -7,6 +7,7 @@ pub struct RealmConfig {
     pub image: String,
     pub mount_path: String,
     pub command: Vec<String>,
+    pub env: Vec<String>,
 }
 
 pub struct RealmConfigInput {
@@ -15,6 +16,7 @@ pub struct RealmConfigInput {
     pub mount_path: Option<String>,
     pub project_dir: String,
     pub command: Vec<String>,
+    pub env: Vec<String>,
 }
 
 pub fn resolve(input: RealmConfigInput) -> RealmConfig {
@@ -31,6 +33,7 @@ pub fn resolve(input: RealmConfigInput) -> RealmConfig {
         image,
         mount_path,
         command: input.command,
+        env: input.env,
     }
 }
 
@@ -86,6 +89,7 @@ mod tests {
             mount_path: None,
             project_dir: "/home/user/myproject".to_string(),
             command: vec![],
+            env: vec![],
         });
 
         assert_eq!(
@@ -95,8 +99,8 @@ mod tests {
                 project_dir: "/home/user/myproject".to_string(),
                 image: DEFAULT_IMAGE.to_string(),
                 mount_path: "/workspace/myproject".to_string(),
-
                 command: vec![],
+                env: vec![],
             }
         );
     }
@@ -106,10 +110,10 @@ mod tests {
         let config = resolve(RealmConfigInput {
             name: "test".to_string(),
             image: None,
-
             mount_path: Some("/custom".to_string()),
             project_dir: "/home/user/myproject".to_string(),
             command: vec![],
+            env: vec![],
         });
 
         assert_eq!(config.mount_path, "/custom");
@@ -120,10 +124,10 @@ mod tests {
         let config = resolve(RealmConfigInput {
             name: "test".to_string(),
             image: Some("ubuntu:latest".to_string()),
-
             mount_path: None,
             project_dir: "/home/user/myproject".to_string(),
             command: vec![],
+            env: vec![],
         });
 
         assert_eq!(config.image, "ubuntu:latest");
@@ -138,6 +142,7 @@ mod tests {
             mount_path: None,
             project_dir: "/home/user/myproject".to_string(),
             command: vec![],
+            env: vec![],
         });
         assert_eq!(config.image, "ubuntu:latest");
         std::env::remove_var("REALM_DEFAULT_IMAGE");
@@ -152,6 +157,7 @@ mod tests {
             mount_path: None,
             project_dir: "/home/user/myproject".to_string(),
             command: vec![],
+            env: vec![],
         });
         assert_eq!(config.image, "python:3.11");
         std::env::remove_var("REALM_DEFAULT_IMAGE");
@@ -165,6 +171,7 @@ mod tests {
             mount_path: Some("/app".to_string()),
             project_dir: "/home/user/project".to_string(),
             command: vec!["python".to_string(), "main.py".to_string()],
+            env: vec!["FOO=bar".to_string()],
         });
 
         assert_eq!(
@@ -175,6 +182,7 @@ mod tests {
                 image: "python:3.11".to_string(),
                 mount_path: "/app".to_string(),
                 command: vec!["python".to_string(), "main.py".to_string()],
+                env: vec!["FOO=bar".to_string()],
             }
         );
     }

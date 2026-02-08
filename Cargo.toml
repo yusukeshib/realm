@@ -1,6 +1,6 @@
 [package]
 name = "realm-cli"
-version = "0.0.9"
+version = "0.0.10"
 edition = "2021"
 description = "Sandboxed Docker environments for git repos"
 license = "MIT"

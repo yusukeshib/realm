@@ -44,6 +44,7 @@ pub fn build_run_args(
     image: &str,
     mount_path: &str,
     cmd: &[String],
+    env: &[String],
     home: &str,
     gitconfig_exists: bool,
     docker_args_env: Option<&str>,
@@ -80,6 +81,11 @@ pub fn build_run_args(
         }
     }
 
+    for entry in env {
+        args.push("-e".into());
+        args.push(entry.clone());
+    }
+
     args.push(image.into());
 
     if !cmd.is_empty() {
@@ -95,6 +101,7 @@ pub fn run_container(
     image: &str,
     mount_path: &str,
     cmd: &[String],
+    env: &[String],
 ) -> Result<i32> {
     let home = std::env::var("HOME").unwrap_or_default();
     let gitconfig = format!("{}/.gitconfig", home);
@@ -107,6 +114,7 @@ pub fn run_container(
         image,
         mount_path,
         cmd,
+        env,
         &home,
         gitconfig_exists,
         docker_args_env.as_deref(),
@@ -163,6 +171,7 @@ mod tests {
             "alpine/git",
             "/workspace",
             &[],
+            &[],
             "/home/user",
             false,
             None,
@@ -195,6 +204,7 @@ mod tests {
             "ubuntu:latest",
             "/workspace",
             &cmd,
+            &[],
             "/home/user",
             false,
             None,
@@ -216,6 +226,7 @@ mod tests {
             "python:3.11",
             "/app",
             &cmd,
+            &[],
             "/home/user",
             false,
             None,
@@ -237,6 +248,7 @@ mod tests {
             "alpine/git",
             "/workspace",
             &[],
+            &[],
             "/home/user",
             true,
             None,
@@ -255,6 +267,7 @@ mod tests {
             "alpine/git",
             "/workspace",
             &[],
+            &[],
             "/home/user",
             false,
             None,
@@ -271,6 +284,7 @@ mod tests {
             "/tmp/project",
             "alpine/git",
             "/workspace",
+            &[],
             &[],
             "/home/user",
             false,
@@ -291,6 +305,7 @@ mod tests {
             "alpine/git",
             "/workspace",
             &[],
+            &[],
             "/home/user",
             false,
             Some("-e 'FOO=hello world'"),
@@ -309,6 +324,7 @@ mod tests {
             "alpine/git",
             "/workspace",
             &[],
+            &[],
             "/home/user",
             false,
             Some(""),
@@ -326,6 +342,7 @@ mod tests {
             "/tmp/project",
             "alpine/git",
             "/workspace",
+            &[],
             &[],
             "/home/user",
             false,
@@ -347,6 +364,7 @@ mod tests {
             "alpine/git",
             "/src",
             &[],
+            &[],
             "/home/user",
             false,
             None,
@@ -365,6 +383,7 @@ mod tests {
             "alpine/git",
             "/workspace",
             &[],
+            &[],
             "/home/user",
             false,
             None,
@@ -381,6 +400,7 @@ mod tests {
             "/tmp/project",
             "alpine/git",
             "/workspace",
+            &[],
             &[],
             "/home/user",
             false,
@@ -399,6 +419,7 @@ mod tests {
             "alpine/git",
             "/workspace",
             &[],
+            &[],
             "/home/user",
             false,
             None,
@@ -407,5 +428,48 @@ mod tests {
 
         let name_pos = args.iter().position(|a| a == "--name").unwrap();
         assert_eq!(args[name_pos + 1], "realm-my-session");
+    }
+
+    #[test]
+    fn test_build_run_args_with_env() {
+        let env = vec!["FOO=bar".to_string(), "BAZ".to_string()];
+        let args = build_run_args(
+            "sess",
+            "/tmp/project",
+            "alpine/git",
+            "/workspace",
+            &[],
+            &env,
+            "/home/user",
+            false,
+            None,
+        )
+        .unwrap();
+
+        let image_pos = args.iter().position(|a| a == "alpine/git").unwrap();
+        // env flags should appear before the image
+        assert_eq!(args[image_pos - 4], "-e");
+        assert_eq!(args[image_pos - 3], "FOO=bar");
+        assert_eq!(args[image_pos - 2], "-e");
+        assert_eq!(args[image_pos - 1], "BAZ");
+    }
+
+    #[test]
+    fn test_build_run_args_empty_env() {
+        let args = build_run_args(
+            "sess",
+            "/tmp/project",
+            "alpine/git",
+            "/workspace",
+            &[],
+            &[],
+            "/home/user",
+            false,
+            None,
+        )
+        .unwrap();
+
+        // No -e flags should be present
+        assert!(!args.iter().any(|a| a == "-e"));
     }
 }

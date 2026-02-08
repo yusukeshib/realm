@@ -8,6 +8,37 @@ Sandboxed Docker environments for git repos — safe playgrounds for AI coding a
 
 ![demo](./docs/demo.gif)
 
+## My usage
+
+```sh
+> ls -al | grep Dockerfile
+.rw-r--r--@ 2.2k yusuke  8 Feb 10:42 Dockerfile
+
+# build my own image for sandbox
+> docker build -t mydev
+
+# run
+> docker run -it mydev
+
+# process your auth of claude
+% claude
+% exit
+
+# save image for my auth action for claude
+> docker commit <container_id> mydev:authorized
+
+# put my dev image for realm in .zshrc
+> export REALM_DEFAULT_IMAGE=mydev:authorized
+
+# Then, you can use realm for claude conveniently
+> realm new-quality-improvement -c
+
+# you can immediately run claude 
+% claude
+
+
+```
+
 ## Why realm?
 
 AI coding agents (Claude Code, Cursor, Copilot) are powerful — but letting them loose on your actual working tree is risky. Realm gives them a **safe, isolated sandbox** where they can go wild without consequences.
@@ -162,3 +193,5 @@ Realm mounts your repo's `.git` directory into a Docker container. Your host wor
 ## License
 
 MIT
+
+
