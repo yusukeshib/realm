@@ -70,6 +70,23 @@ pub fn check() -> Result<()> {
     Ok(())
 }
 
+const SSH_CONTAINER_PATH: &str = "/run/host-services/ssh-auth.sock";
+
+/// Return (host_path, container_path) for SSH agent forwarding.
+fn ssh_agent_paths() -> Result<(String, String)> {
+    if cfg!(target_os = "macos") {
+        Ok((
+            "/run/host-services/ssh-auth.sock".to_string(),
+            SSH_CONTAINER_PATH.to_string(),
+        ))
+    } else {
+        let host = std::env::var("SSH_AUTH_SOCK").map_err(|_| {
+            anyhow::anyhow!("SSH_AUTH_SOCK is not set. Cannot forward SSH agent on Linux.")
+        })?;
+        Ok((host, SSH_CONTAINER_PATH.to_string()))
+    }
+}
+
 /// Build the docker run argument list without executing. Used by run_container and tests.
 #[allow(clippy::too_many_arguments)]
 pub fn build_run_args(
@@ -81,6 +98,7 @@ pub fn build_run_args(
     home: &str,
     gitconfig_exists: bool,
     docker_args_env: Option<&str>,
+    ssh: bool,
 ) -> Result<Vec<String>> {
     let workspace_dir = format!("{}/.realm/workspaces/{}", home, name);
     let mut args: Vec<String> = vec![
@@ -100,6 +118,14 @@ pub fn build_run_args(
         let gitconfig = format!("{}/.gitconfig", home);
         args.push("-v".into());
         args.push(format!("{}:/root/.gitconfig:ro", gitconfig));
+    }
+
+    if ssh {
+        let (host_path, container_path) = ssh_agent_paths()?;
+        args.push("-v".into());
+        args.push(format!("{}:{}", host_path, container_path));
+        args.push("-e".into());
+        args.push(format!("SSH_AUTH_SOCK={}", container_path));
     }
 
     if let Some(extra) = docker_args_env {
@@ -134,6 +160,7 @@ pub fn run_container(
     mount_path: &str,
     cmd: &[String],
     env: &[String],
+    ssh: bool,
 ) -> Result<i32> {
     let home = std::env::var("HOME").unwrap_or_default();
     let gitconfig = format!("{}/.gitconfig", home);
@@ -151,6 +178,7 @@ pub fn run_container(
         &home,
         gitconfig_exists,
         docker_args_env.as_deref(),
+        ssh,
     )?;
 
     let status = Command::new("docker")
@@ -207,6 +235,7 @@ mod tests {
             "/home/user",
             false,
             None,
+            false,
         )
         .unwrap();
 
@@ -240,6 +269,7 @@ mod tests {
             "/home/user",
             false,
             None,
+            false,
         )
         .unwrap();
 
@@ -261,6 +291,7 @@ mod tests {
             "/home/user",
             false,
             None,
+            false,
         )
         .unwrap();
 
@@ -282,6 +313,7 @@ mod tests {
             "/home/user",
             true,
             None,
+            false,
         )
         .unwrap();
 
@@ -300,6 +332,7 @@ mod tests {
             "/home/user",
             false,
             None,
+            false,
         )
         .unwrap();
 
@@ -317,6 +350,7 @@ mod tests {
             "/home/user",
             false,
             Some("--network host -v /data:/data:ro"),
+            false,
         )
         .unwrap();
 
@@ -336,6 +370,7 @@ mod tests {
             "/home/user",
             false,
             Some("-e 'FOO=hello world'"),
+            false,
         )
         .unwrap();
 
@@ -354,6 +389,7 @@ mod tests {
             "/home/user",
             false,
             Some(""),
+            false,
         )
         .unwrap();
 
@@ -372,6 +408,7 @@ mod tests {
             "/home/user",
             false,
             Some("--flag 'unclosed quote"),
+            false,
         );
 
         assert!(result.is_err());
@@ -392,6 +429,7 @@ mod tests {
             "/home/user",
             false,
             None,
+            false,
         )
         .unwrap();
 
@@ -410,6 +448,7 @@ mod tests {
             "/home/user",
             false,
             None,
+            false,
         )
         .unwrap();
 
@@ -427,6 +466,7 @@ mod tests {
             "/home/user",
             false,
             None,
+            false,
         )
         .unwrap();
 
@@ -444,6 +484,7 @@ mod tests {
             "/home/user",
             false,
             None,
+            false,
         )
         .unwrap();
 
@@ -463,6 +504,7 @@ mod tests {
             "/home/user",
             false,
             None,
+            false,
         )
         .unwrap();
 
@@ -490,6 +532,7 @@ mod tests {
             "/home/user",
             false,
             None,
+            false,
         )
         .unwrap();
 

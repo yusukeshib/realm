@@ -39,6 +39,10 @@ struct Cli {
     #[arg(long = "dir")]
     dir: Option<String>,
 
+    /// Disable SSH agent forwarding (enabled by default)
+    #[arg(long = "no-ssh")]
+    no_ssh: bool,
+
     /// Command to run in container
     #[arg(last = true)]
     cmd: Vec<String>,
@@ -51,9 +55,15 @@ fn main() {
         None => cmd_list(),
         Some("upgrade") => cmd_upgrade(),
         Some(_) if cli.delete => cmd_delete(cli.name.as_deref().unwrap()),
-        Some(name) => {
-            cmd_create_or_resume(name, cli.image, cli.mount_path, cli.dir, cli.cmd, cli.env)
-        }
+        Some(name) => cmd_create_or_resume(
+            name,
+            cli.image,
+            cli.mount_path,
+            cli.dir,
+            cli.cmd,
+            cli.env,
+            !cli.no_ssh,
+        ),
     };
 
     if let Err(e) = result {
@@ -82,6 +92,7 @@ fn cmd_create(
     dir: Option<String>,
     cmd: Vec<String>,
     env: Vec<String>,
+    ssh: bool,
 ) -> Result<()> {
     session::validate_name(name)?;
 
@@ -109,6 +120,7 @@ fn cmd_create(
         project_dir,
         command: cmd,
         env,
+        ssh,
     });
 
     let sess = session::Session {
@@ -118,6 +130,7 @@ fn cmd_create(
         mount_path: cfg.mount_path.clone(),
         command: cfg.command.clone(),
         env: cfg.env.clone(),
+        ssh: cfg.ssh,
     };
     session::save(&sess)?;
 
@@ -129,6 +142,7 @@ fn cmd_create(
         &cfg.mount_path,
         &cfg.command,
         &cfg.env,
+        cfg.ssh,
     )?;
     std::process::exit(exit_code);
 }
@@ -140,6 +154,7 @@ fn cmd_create_or_resume(
     dir: Option<String>,
     cmd: Vec<String>,
     env: Vec<String>,
+    ssh: bool,
 ) -> Result<()> {
     // Check if session exists
     if session::session_exists(name) {
@@ -149,7 +164,7 @@ fn cmd_create_or_resume(
     }
 
     // Session doesn't exist - create it
-    cmd_create(name, image, mount_path, dir, cmd, env)
+    cmd_create(name, image, mount_path, dir, cmd, env, ssh)
 }
 
 fn cmd_resume(name: &str, cmd: Vec<String>) -> Result<()> {
@@ -182,6 +197,7 @@ fn cmd_resume(name: &str, cmd: Vec<String>) -> Result<()> {
             &sess.mount_path,
             &final_cmd,
             &sess.env,
+            sess.ssh,
         )?
     };
     std::process::exit(exit_code);

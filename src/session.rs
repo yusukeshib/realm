@@ -13,6 +13,7 @@ pub struct Session {
     pub mount_path: String,
     pub command: Vec<String>,
     pub env: Vec<String>,
+    pub ssh: bool,
 }
 
 pub struct SessionSummary {
@@ -66,6 +67,9 @@ pub fn save(session: &Session) -> Result<()> {
         let content: Vec<&str> = session.env.iter().map(|s| s.as_str()).collect();
         fs::write(dir.join("env"), content.join("\n") + "\n")?;
     }
+    if session.ssh {
+        fs::write(dir.join("ssh"), "true")?;
+    }
 
     Ok(())
 }
@@ -108,6 +112,8 @@ pub fn load(name: &str) -> Result<Session> {
         })
         .unwrap_or_default();
 
+    let ssh = dir.join("ssh").exists();
+
     Ok(Session {
         name: name.to_string(),
         project_dir,
@@ -115,6 +121,7 @@ pub fn load(name: &str) -> Result<Session> {
         mount_path,
         command,
         env,
+        ssh,
     })
 }
 
@@ -237,9 +244,9 @@ mod tests {
                 project_dir: "/tmp/myproject".to_string(),
                 image: "ubuntu:latest".to_string(),
                 mount_path: "/workspace".to_string(),
-
                 command: vec![],
                 env: vec![],
+                ssh: false,
             };
             save(&sess).unwrap();
 
@@ -266,6 +273,7 @@ mod tests {
                     "echo hello".to_string(),
                 ],
                 env: vec![],
+                ssh: false,
             };
             save(&sess).unwrap();
 
@@ -282,9 +290,9 @@ mod tests {
                 project_dir: "/tmp/p".to_string(),
                 image: "alpine/git".to_string(),
                 mount_path: "/workspace".to_string(),
-
                 command: vec![],
                 env: vec![],
+                ssh: false,
             };
             save(&sess).unwrap();
 
@@ -346,9 +354,9 @@ mod tests {
                 project_dir: "/tmp/p".to_string(),
                 image: "alpine/git".to_string(),
                 mount_path: "/workspace".to_string(),
-
                 command: vec![],
                 env: vec![],
+                ssh: false,
             };
             save(&sess).unwrap();
             assert!(session_exists("exists-test"));
@@ -374,6 +382,7 @@ mod tests {
                     mount_path: "/workspace".to_string(),
                     command: vec![],
                     env: vec![],
+                    ssh: false,
                 };
                 save(&sess).unwrap();
             }
@@ -395,9 +404,9 @@ mod tests {
                 project_dir: "/home/user/project".to_string(),
                 image: "ubuntu:22.04".to_string(),
                 mount_path: "/workspace".to_string(),
-
                 command: vec![],
                 env: vec![],
+                ssh: false,
             };
             save(&sess).unwrap();
 
@@ -417,9 +426,9 @@ mod tests {
                 project_dir: "/tmp/p".to_string(),
                 image: "alpine/git".to_string(),
                 mount_path: "/workspace".to_string(),
-
                 command: vec![],
                 env: vec![],
+                ssh: false,
             };
             save(&sess).unwrap();
             assert!(session_exists("to-remove"));
@@ -445,9 +454,9 @@ mod tests {
                 project_dir: "/tmp/p".to_string(),
                 image: "alpine/git".to_string(),
                 mount_path: "/workspace".to_string(),
-
                 command: vec![],
                 env: vec![],
+                ssh: false,
             };
             save(&sess).unwrap();
 
@@ -483,9 +492,9 @@ mod tests {
                 project_dir: "/tmp/p".to_string(),
                 image: "alpine/git".to_string(),
                 mount_path: "/workspace".to_string(),
-
                 command: vec!["bash".to_string(), "-c".to_string(), "echo hi".to_string()],
                 env: vec![],
+                ssh: false,
             };
             save(&sess).unwrap();
 
@@ -505,6 +514,7 @@ mod tests {
                 mount_path: "/workspace".to_string(),
                 command: vec![],
                 env: vec!["FOO=bar".to_string(), "BAZ".to_string()],
+                ssh: false,
             };
             save(&sess).unwrap();
 
@@ -527,6 +537,7 @@ mod tests {
                 mount_path: "/workspace".to_string(),
                 command: vec![],
                 env: vec![],
+                ssh: false,
             };
             save(&sess).unwrap();
 

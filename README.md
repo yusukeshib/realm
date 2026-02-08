@@ -159,6 +159,7 @@ realm my-feature -d
 | `--mount <path>` | Mount path inside the container (default: `/workspace`) - only used when creating |
 | `--dir <path>` | Project directory (default: current directory) - only used when creating |
 | `-e, --env <KEY[=VALUE]>` | Environment variable to pass to container - only used when creating |
+| `--no-ssh` | Disable SSH agent forwarding (enabled by default) - only used when creating |
 
 ## Environment Variables
 
@@ -185,6 +186,23 @@ On first run, `git clone --local` creates an independent copy of your repo in th
 | Host working tree | Never modified — workspace is an independent clone |
 | Workspace | Bind-mounted from `~/.realm/workspaces/<name>/`, persists across stop/start |
 | Session cleanup | `realm <name> -d` removes container, workspace, and session data |
+
+## SSH Agent Forwarding
+
+SSH agent forwarding is enabled by default. This lets you use `git clone`, `ssh`, and other tools that rely on your SSH keys without copying them into the container.
+
+```bash
+realm my-feature --image ubuntu:latest -- bash
+
+# Inside the container
+ssh-add -l          # should list your keys
+git clone git@github.com:user/repo.git
+
+# To disable SSH forwarding
+realm my-feature --no-ssh -- bash
+```
+
+On **macOS** (Docker Desktop / OrbStack), the socket at `/run/host-services/ssh-auth.sock` is mounted automatically. On **Linux**, the `$SSH_AUTH_SOCK` environment variable is used.
 
 ## License
 

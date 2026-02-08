@@ -8,6 +8,7 @@ pub struct RealmConfig {
     pub mount_path: String,
     pub command: Vec<String>,
     pub env: Vec<String>,
+    pub ssh: bool,
 }
 
 pub struct RealmConfigInput {
@@ -17,6 +18,7 @@ pub struct RealmConfigInput {
     pub project_dir: String,
     pub command: Vec<String>,
     pub env: Vec<String>,
+    pub ssh: bool,
 }
 
 pub fn resolve(input: RealmConfigInput) -> RealmConfig {
@@ -34,6 +36,7 @@ pub fn resolve(input: RealmConfigInput) -> RealmConfig {
         mount_path,
         command: input.command,
         env: input.env,
+        ssh: input.ssh,
     }
 }
 
@@ -90,6 +93,7 @@ mod tests {
             project_dir: "/home/user/myproject".to_string(),
             command: vec![],
             env: vec![],
+            ssh: false,
         });
 
         assert_eq!(
@@ -101,6 +105,7 @@ mod tests {
                 mount_path: "/workspace/myproject".to_string(),
                 command: vec![],
                 env: vec![],
+                ssh: false,
             }
         );
     }
@@ -114,6 +119,7 @@ mod tests {
             project_dir: "/home/user/myproject".to_string(),
             command: vec![],
             env: vec![],
+            ssh: false,
         });
 
         assert_eq!(config.mount_path, "/custom");
@@ -128,6 +134,7 @@ mod tests {
             project_dir: "/home/user/myproject".to_string(),
             command: vec![],
             env: vec![],
+            ssh: false,
         });
 
         assert_eq!(config.image, "ubuntu:latest");
@@ -143,6 +150,7 @@ mod tests {
             project_dir: "/home/user/myproject".to_string(),
             command: vec![],
             env: vec![],
+            ssh: false,
         });
         assert_eq!(config.image, "ubuntu:latest");
         std::env::remove_var("REALM_DEFAULT_IMAGE");
@@ -158,6 +166,7 @@ mod tests {
             project_dir: "/home/user/myproject".to_string(),
             command: vec![],
             env: vec![],
+            ssh: false,
         });
         assert_eq!(config.image, "python:3.11");
         std::env::remove_var("REALM_DEFAULT_IMAGE");
@@ -172,6 +181,7 @@ mod tests {
             project_dir: "/home/user/project".to_string(),
             command: vec!["python".to_string(), "main.py".to_string()],
             env: vec!["FOO=bar".to_string()],
+            ssh: false,
         });
 
         assert_eq!(
@@ -183,6 +193,7 @@ mod tests {
                 mount_path: "/app".to_string(),
                 command: vec!["python".to_string(), "main.py".to_string()],
                 env: vec!["FOO=bar".to_string()],
+                ssh: false,
             }
         );
     }
