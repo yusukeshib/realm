@@ -43,7 +43,7 @@ Enter
 Sleep 2s
 
 # Create session with extra Docker flags
-Type "realm bugfix --docker-args \"-e DEBUG=1\" --image ubuntu:latest -- bash"
+Type "realm bugfix --docker-args '-e DEBUG=1' --image ubuntu:latest -- bash"
 Sleep 500ms
 Enter
 Sleep 3s
