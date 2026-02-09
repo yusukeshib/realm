@@ -140,14 +140,16 @@ pub struct DockerRunConfig<'a> {
     pub gitconfig_exists: bool,
     pub docker_args_env: Option<&'a str>,
     pub ssh: bool,
+    pub detach: bool,
 }
 
 /// Build the docker run argument list without executing. Used by run_container and tests.
 pub fn build_run_args(cfg: &DockerRunConfig) -> Result<Vec<String>> {
     let workspace_dir = format!("{}/.realm/workspaces/{}", cfg.home, cfg.name);
+    let interactive_flag = if cfg.detach { "-d" } else { "-it" };
     let mut args: Vec<String> = vec![
         "run".into(),
-        "-it".into(),
+        interactive_flag.into(),
         "--name".into(),
         format!("realm-{}", cfg.name),
         "--hostname".into(),
@@ -207,6 +209,7 @@ pub fn run_container(
     env: &[String],
     docker_args: &str,
     ssh: bool,
+    detach: bool,
 ) -> Result<i32> {
     let home = config::home_dir();
     let gitconfig = format!("{}/.gitconfig", home);
@@ -234,16 +237,28 @@ pub fn run_container(
         gitconfig_exists,
         docker_args_env: docker_args_opt,
         ssh,
+        detach,
     })?;
 
-    let status = Command::new("docker")
-        .args(&args)
-        .stdin(std::process::Stdio::inherit())
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
-        .status()?;
-
-    Ok(status.code().unwrap_or(1))
+    if detach {
+        let output = Command::new("docker").args(&args).output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("docker run failed: {}", stderr.trim());
+        }
+        let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        println!("{}", container_id);
+        println!("Run `realm {}` to attach.", name);
+        Ok(0)
+    } else {
+        let status = Command::new("docker")
+            .args(&args)
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .status()?;
+        Ok(status.code().unwrap_or(1))
+    }
 }
 
 pub fn container_exists(name: &str) -> bool {
@@ -300,6 +315,33 @@ pub fn start_container(name: &str) -> Result<i32> {
     Ok(status.code().unwrap_or(1))
 }
 
+pub fn attach_container(name: &str) -> Result<i32> {
+    let status = Command::new("docker")
+        .args(["attach", &format!("realm-{}", name)])
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()?;
+
+    Ok(status.code().unwrap_or(1))
+}
+
+pub fn start_container_detached(name: &str) -> Result<i32> {
+    let status = Command::new("docker")
+        .args(["start", &format!("realm-{}", name)])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::inherit())
+        .status()?;
+
+    if status.success() {
+        println!("Container realm-{} started in background.", name);
+        println!("Run `realm {}` to attach.", name);
+        Ok(0)
+    } else {
+        Ok(status.code().unwrap_or(1))
+    }
+}
+
 pub fn remove_container(name: &str) {
     let _ = Command::new("docker")
         .args(["rm", "-f", &format!("realm-{}", name)])
@@ -323,6 +365,7 @@ mod tests {
             gitconfig_exists: false,
             docker_args_env: None,
             ssh: false,
+            detach: false,
         }
     }
 
@@ -526,6 +569,35 @@ mod tests {
 
         // No -e flags should be present
         assert!(!args.iter().any(|a| a == "-e"));
+    }
+
+    #[test]
+    fn test_build_run_args_detached() {
+        let args = build_run_args(&DockerRunConfig {
+            detach: true,
+            ..default_config()
+        })
+        .unwrap();
+
+        assert_eq!(args[0], "run");
+        assert_eq!(args[1], "-d");
+        assert!(!args.contains(&"-it".to_string()));
+    }
+
+    #[test]
+    fn test_build_run_args_detached_with_command() {
+        let cmd = vec!["sleep".to_string(), "60".to_string()];
+        let args = build_run_args(&DockerRunConfig {
+            detach: true,
+            cmd: &cmd,
+            ..default_config()
+        })
+        .unwrap();
+
+        assert_eq!(args[1], "-d");
+        let image_pos = args.iter().position(|a| a == "alpine:latest").unwrap();
+        assert_eq!(args[image_pos + 1], "sleep");
+        assert_eq!(args[image_pos + 2], "60");
     }
 
     #[test]

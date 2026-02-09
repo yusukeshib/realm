@@ -14,14 +14,18 @@ use std::path::Path;
 #[command(
     name = "realm",
     about = "Sandboxed Docker environments for git repos",
-    after_help = "Examples:\n  realm my-feature --image ubuntu:latest -- bash\n  realm my-feature\n  realm my-feature -d\n  realm upgrade\n\nSessions are automatically created if they don't exist."
+    after_help = "Examples:\n  realm my-feature --image ubuntu:latest -- bash\n  realm my-feature\n  realm my-feature -d -- claude -p \"do something\"\n  realm my-feature --delete\n  realm upgrade\n\nSessions are automatically created if they don't exist."
 )]
 struct Cli {
     /// Session name
     name: Option<String>,
 
+    /// Run container in the background (detached)
+    #[arg(short = 'd', conflicts_with = "delete")]
+    detach: bool,
+
     /// Delete the session
-    #[arg(short = 'd')]
+    #[arg(long)]
     delete: bool,
 
     /// Docker image to use (default: $REALM_DEFAULT_IMAGE or alpine:latest)
@@ -52,13 +56,28 @@ fn main() {
 
     let result = match cli.name.as_deref() {
         None if cli.delete => {
+            eprintln!("Error: Session name required for --delete.");
+            std::process::exit(1);
+        }
+        None if cli.detach => {
             eprintln!("Error: Session name required for -d.");
             std::process::exit(1);
         }
         None => cmd_list(),
+        Some("upgrade") if cli.detach => {
+            eprintln!("Error: -d cannot be used with upgrade.");
+            std::process::exit(1);
+        }
         Some("upgrade") => cmd_upgrade(),
         Some(_) if cli.delete => cmd_delete(cli.name.as_deref().unwrap()),
-        Some(name) => cmd_create_or_resume(name, cli.image, docker_args, cli.cmd, !cli.no_ssh),
+        Some(name) => cmd_create_or_resume(
+            name,
+            cli.image,
+            docker_args,
+            cli.cmd,
+            !cli.no_ssh,
+            cli.detach,
+        ),
     };
 
     match result {
@@ -84,7 +103,7 @@ fn cmd_list() -> Result<i32> {
     }
 
     match tui::select_session(&sessions)? {
-        Some(i) => cmd_resume(&sessions[i].name, "", vec![], true),
+        Some(i) => cmd_resume(&sessions[i].name, "", vec![], true, false),
         None => Ok(0),
     }
 }
@@ -95,6 +114,7 @@ fn cmd_create(
     docker_args: &str,
     cmd: Vec<String>,
     ssh: bool,
+    detach: bool,
 ) -> Result<i32> {
     session::validate_name(name)?;
 
@@ -132,6 +152,7 @@ fn cmd_create(
         &sess.env,
         docker_args,
         sess.ssh,
+        detach,
     )
 }
 
@@ -141,18 +162,25 @@ fn cmd_create_or_resume(
     docker_args: String,
     cmd: Vec<String>,
     ssh: bool,
+    detach: bool,
 ) -> Result<i32> {
     // Check if session exists
     if session::session_exists(name) {
         // Session exists - resume it
-        return cmd_resume(name, &docker_args, cmd, ssh);
+        return cmd_resume(name, &docker_args, cmd, ssh, detach);
     }
 
     // Session doesn't exist - create it
-    cmd_create(name, image, &docker_args, cmd, ssh)
+    cmd_create(name, image, &docker_args, cmd, ssh, detach)
 }
 
-fn cmd_resume(name: &str, docker_args: &str, cmd: Vec<String>, ssh: bool) -> Result<i32> {
+fn cmd_resume(
+    name: &str,
+    docker_args: &str,
+    cmd: Vec<String>,
+    ssh: bool,
+    detach: bool,
+) -> Result<i32> {
     session::validate_name(name)?;
 
     let sess = session::load(name)?;
@@ -164,19 +192,22 @@ fn cmd_resume(name: &str, docker_args: &str, cmd: Vec<String>, ssh: bool) -> Res
     docker::check()?;
 
     if docker::container_is_running(name) {
-        bail!(
-            "Session '{}' is already running in another terminal.\n\
-             To connect to it, run: docker exec -it realm-{} sh",
-            name,
-            name,
-        );
+        if detach {
+            println!("Session '{}' is already running.", name);
+            return Ok(0);
+        }
+        return docker::attach_container(name);
     }
 
     println!("Resuming session '{}'...", name);
     session::touch_resumed_at(name)?;
 
     if cmd.is_empty() && docker::container_exists(name) {
-        docker::start_container(name)
+        if detach {
+            docker::start_container_detached(name)
+        } else {
+            docker::start_container(name)
+        }
     } else {
         let final_cmd = if cmd.is_empty() {
             sess.command.clone()
@@ -193,6 +224,7 @@ fn cmd_resume(name: &str, docker_args: &str, cmd: Vec<String>, ssh: bool) -> Res
             &sess.env,
             docker_args,
             ssh,
+            detach,
         )
     }
 }
@@ -335,6 +367,7 @@ mod tests {
         let cli = parse(&[]);
         assert!(cli.name.is_none());
         assert!(!cli.delete);
+        assert!(!cli.detach);
     }
 
     #[test]
@@ -342,20 +375,59 @@ mod tests {
         let cli = parse(&["my-session"]);
         assert_eq!(cli.name.as_deref(), Some("my-session"));
         assert!(!cli.delete);
+        assert!(!cli.detach);
+    }
+
+    #[test]
+    fn test_delete_flag_long() {
+        let cli = parse(&["my-session", "--delete"]);
+        assert_eq!(cli.name.as_deref(), Some("my-session"));
+        assert!(cli.delete);
+        assert!(!cli.detach);
     }
 
     #[test]
     fn test_delete_flag_before_name() {
-        let cli = parse(&["-d", "my-session"]);
+        let cli = parse(&["--delete", "my-session"]);
         assert_eq!(cli.name.as_deref(), Some("my-session"));
         assert!(cli.delete);
     }
 
     #[test]
-    fn test_delete_flag_after_name() {
+    fn test_detach_flag_before_name() {
+        let cli = parse(&["-d", "my-session"]);
+        assert_eq!(cli.name.as_deref(), Some("my-session"));
+        assert!(cli.detach);
+        assert!(!cli.delete);
+    }
+
+    #[test]
+    fn test_detach_flag_after_name() {
         let cli = parse(&["my-session", "-d"]);
         assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert!(cli.delete);
+        assert!(cli.detach);
+        assert!(!cli.delete);
+    }
+
+    #[test]
+    fn test_detach_with_command() {
+        let cli = parse(&["my-session", "-d", "--", "sleep", "60"]);
+        assert_eq!(cli.name.as_deref(), Some("my-session"));
+        assert!(cli.detach);
+        assert_eq!(cli.cmd, vec!["sleep", "60"]);
+    }
+
+    #[test]
+    fn test_detach_and_delete_conflict() {
+        let result = Cli::try_parse_from(["realm", "my-session", "-d", "--delete"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detach_without_name() {
+        let cli = parse(&["-d"]);
+        assert!(cli.name.is_none());
+        assert!(cli.detach);
     }
 
     #[test]
@@ -416,7 +488,7 @@ mod tests {
 
     #[test]
     fn test_delete_without_name() {
-        let cli = parse(&["-d"]);
+        let cli = parse(&["--delete"]);
         assert!(cli.name.is_none());
         assert!(cli.delete);
     }

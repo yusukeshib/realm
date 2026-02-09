@@ -118,7 +118,9 @@ realm experiment-v2
 ```bash
 realm                                               全セッション一覧（TUI）
 realm <name> [options] [-- cmd...]                  セッションの作成または再開
-realm <name> -d                                     セッションの削除
+realm <name> -d [-- cmd...]                         バックグラウンドで実行（デタッチ）
+realm <name>                                        実行中のセッションにアタッチ
+realm <name> --delete                               セッションの削除
 realm upgrade                                       最新版にアップグレード
 ```
 
@@ -141,6 +143,18 @@ realm my-feature
 
 セッションが存在しない場合は自動的に作成されます。既存のセッションを再開する場合、`--image` などの作成時オプションは無視されます。`--docker-args` や `--no-ssh` などのランタイムオプションは毎回適用されます。
 
+### デタッチモード
+
+```bash
+# バックグラウンドで実行
+realm my-feature -d -- claude -p "do something"
+
+# 実行中のセッションにアタッチ
+realm my-feature
+
+# 停止せずにデタッチ: Ctrl+P, Ctrl+Q
+```
+
 ### セッション一覧
 
 ```bash
@@ -157,14 +171,15 @@ test                 /Users/you/projects/other      ubuntu:latest        2026-02
 ### セッションの削除
 
 ```bash
-realm my-feature -d
+realm my-feature --delete
 ```
 
 ## オプション
 
 | オプション | 説明 |
 |--------|-------------|
-| `-d` | セッションを削除 |
+| `-d` | バックグラウンドでコンテナを実行（デタッチ） |
+| `--delete` | セッションを削除 |
 | `--image <image>` | 使用するDockerイメージ（デフォルト: `alpine:latest`）- 作成時のみ有効 |
 | `--docker-args <args>` | 追加のDockerフラグ（例: `-e KEY=VALUE`、`-v /host:/container`）。`$REALM_DOCKER_ARGS` を上書き |
 | `--no-ssh` | SSHエージェント転送を無効化（デフォルトは有効） |
@@ -192,14 +207,14 @@ realm my-session --docker-args "-e DEBUG=1"
 初回実行時、`git clone --local` でリポジトリの独立したコピーをワークスペースディレクトリに作成します。コンテナは完全に自己完結したgitリポジトリを取得します — 特別なマウントやentrypointスクリプトは不要です。ホストの作業ディレクトリは一切変更されません。
 
 - **独立したクローン** — 各セッションは `git clone --local` による完全なgitリポジトリを持ちます
-- **永続的なワークスペース** — `exit` してもファイルは保持され、`realm <name>` で再開可能。`realm <name> -d` でクリーンアップ
+- **永続的なワークスペース** — `exit` してもファイルは保持され、`realm <name>` で再開可能。`realm <name> --delete` でクリーンアップ
 - **任意のイメージ・ユーザー** — rootおよび非rootコンテナイメージで動作
 
 | 観点 | 保護 |
 |--------|------------|
 | ホスト作業ツリー | 変更されない — ワークスペースは独立したクローン |
 | ワークスペース | `~/.realm/workspaces/<name>/` からバインドマウント、停止・起動をまたいで永続化 |
-| セッションクリーンアップ | `realm <name> -d` でコンテナ、ワークスペース、セッションデータを削除 |
+| セッションクリーンアップ | `realm <name> --delete` でコンテナ、ワークスペース、セッションデータを削除 |
 
 ## 設計上の判断
 
@@ -266,6 +281,12 @@ Realmは[Claude Code](https://docs.anthropic.com/en/docs/claude-code)の理想�
 
 ```bash
 realm ai-experiment --image node:20 -- claude
+```
+
+デタッチモードでバックグラウンド実行：
+
+```bash
+realm ai-experiment -d --image node:20 -- claude -p "refactor the auth module"
 ```
 
 エージェントが行うすべての操作はコンテナ内に留まります。完了したらセッションを削除すれば消えます。
