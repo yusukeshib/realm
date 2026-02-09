@@ -3,11 +3,11 @@ use anyhow::{bail, Result};
 pub const DEFAULT_IMAGE: &str = "alpine:latest";
 
 /// Return the user's home directory from the HOME environment variable.
-/// Returns an error if HOME is not set.
+/// Returns an error if HOME is not set or is empty.
 pub fn home_dir() -> Result<String> {
     match std::env::var("HOME") {
         Ok(h) if !h.is_empty() => Ok(h),
-        _ => bail!("HOME environment variable is not set."),
+        _ => bail!("HOME environment variable is not set or is empty."),
     }
 }
 

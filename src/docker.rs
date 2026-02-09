@@ -6,7 +6,7 @@ use crate::config;
 
 /// Create a workspace directory on the host for the session.
 /// On first run, clones the project repo via `git clone --local`.
-/// Returns the host path. The directory is world-writable so any container user can write.
+/// Returns the host path. The directory is writable by the owner and group so container users with the appropriate group can write.
 pub fn ensure_workspace(home: &str, name: &str, project_dir: &str) -> Result<String> {
     let dir_path = Path::new(home).join(".realm").join("workspaces").join(name);
     let dir = dir_path.to_string_lossy().to_string();
@@ -401,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_run_args_with_docker_args_env() {
+    fn test_build_run_args_with_docker_args() {
         let args = build_run_args(&DockerRunConfig {
             docker_args: Some("--network host -v /data:/data:ro"),
             ..default_config()

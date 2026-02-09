@@ -69,9 +69,13 @@ pub fn validate_name(name: &str) -> Result<()> {
 }
 
 pub fn session_exists(name: &str) -> bool {
-    sessions_dir()
-        .map(|d| d.join(name).is_dir())
-        .unwrap_or(false)
+    match sessions_dir() {
+        Ok(dir) => dir.join(name).is_dir(),
+        Err(e) => {
+            eprintln!("Failed to determine sessions directory while checking if session '{}' exists: {}", name, e);
+            false
+        }
+    }
 }
 
 pub fn save(session: &Session) -> Result<()> {
