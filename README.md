@@ -275,6 +275,10 @@ git push origin main
 realm my-feature --no-ssh -- bash
 ```
 
+## Security Note
+
+The `--docker-args` flag and `REALM_DOCKER_ARGS` environment variable pass arguments directly to `docker run`. This means flags like `--privileged`, `--pid=host`, or `-v /:/host` can weaken or bypass container sandboxing. Only use trusted values and be careful when sourcing `REALM_DOCKER_ARGS` from shared or automated environments.
+
 ## Claude Code Integration
 
 Realm is the ideal companion for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Run Claude Code inside a realm session and let it make risky changes, experiment with branches, and run tests — all fully isolated from your host.

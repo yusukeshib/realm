@@ -6,10 +6,11 @@ use crate::config;
 
 /// Create a workspace directory on the host for the session.
 /// On first run, clones the project repo via `git clone --local`.
-/// Returns the host path. The directory is world-writable so any container user can write.
+/// Returns the host path. The directory is writable by the owner and group so container users with the appropriate group can write.
 pub fn ensure_workspace(home: &str, name: &str, project_dir: &str) -> Result<String> {
-    let dir = format!("{}/.realm/workspaces/{}", home, name);
-    let git_dir = format!("{}/.git", dir);
+    let dir_path = Path::new(home).join(".realm").join("workspaces").join(name);
+    let dir = dir_path.to_string_lossy().to_string();
+    let git_dir = dir_path.join(".git");
 
     if !Path::new(&git_dir).exists() {
         let status = Command::new("git")
@@ -40,7 +41,7 @@ pub fn ensure_workspace(home: &str, name: &str, project_dir: &str) -> Result<Str
     {
         use std::os::unix::fs::PermissionsExt;
         let mut perms = std::fs::metadata(&dir)?.permissions();
-        perms.set_mode(0o777);
+        perms.set_mode(0o770);
         std::fs::set_permissions(&dir, perms)?;
     }
 
@@ -49,9 +50,13 @@ pub fn ensure_workspace(home: &str, name: &str, project_dir: &str) -> Result<Str
 
 /// Remove the workspace directory for a session.
 pub fn remove_workspace(name: &str) {
-    let home = config::home_dir();
-    let dir = format!("{}/.realm/workspaces/{}", home, name);
-    let _ = std::fs::remove_dir_all(&dir);
+    if let Ok(home) = config::home_dir() {
+        let dir = Path::new(&home)
+            .join(".realm")
+            .join("workspaces")
+            .join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 pub fn check() -> Result<()> {
@@ -132,20 +137,24 @@ fn fix_ssh_socket_permissions(image: &str) {
 
 pub struct DockerRunConfig<'a> {
     pub name: &'a str,
+    pub project_dir: &'a str,
     pub image: &'a str,
     pub mount_path: &'a str,
     pub cmd: &'a [String],
     pub env: &'a [String],
     pub home: &'a str,
-    pub gitconfig_exists: bool,
-    pub docker_args_env: Option<&'a str>,
+    pub docker_args: Option<&'a str>,
     pub ssh: bool,
     pub detach: bool,
 }
 
 /// Build the docker run argument list without executing. Used by run_container and tests.
 pub fn build_run_args(cfg: &DockerRunConfig) -> Result<Vec<String>> {
-    let workspace_dir = format!("{}/.realm/workspaces/{}", cfg.home, cfg.name);
+    let workspace_dir = Path::new(cfg.home)
+        .join(".realm")
+        .join("workspaces")
+        .join(cfg.name);
+    let workspace_dir = workspace_dir.to_string_lossy();
     let interactive_flag = if cfg.detach { "-d" } else { "-it" };
     let mut args: Vec<String> = vec![
         "run".into(),
@@ -160,12 +169,6 @@ pub fn build_run_args(cfg: &DockerRunConfig) -> Result<Vec<String>> {
         cfg.mount_path.into(),
     ];
 
-    if cfg.gitconfig_exists {
-        let gitconfig = format!("{}/.gitconfig", cfg.home);
-        args.push("-v".into());
-        args.push(format!("{}:/root/.gitconfig:ro", gitconfig));
-    }
-
     if cfg.ssh {
         let (host_path, container_path) = ssh_agent_paths()?;
         args.push("-v".into());
@@ -174,12 +177,12 @@ pub fn build_run_args(cfg: &DockerRunConfig) -> Result<Vec<String>> {
         args.push(format!("SSH_AUTH_SOCK={}", container_path));
     }
 
-    if let Some(extra) = cfg.docker_args_env {
+    if let Some(extra) = cfg.docker_args {
         if !extra.is_empty() {
             match shell_words::split(extra) {
                 Ok(extra_args) => args.extend(extra_args),
                 Err(e) => {
-                    bail!("Failed to parse REALM_DOCKER_ARGS: {}", e);
+                    bail!("Failed to parse docker args: {}", e);
                 }
             }
         }
@@ -199,48 +202,16 @@ pub fn build_run_args(cfg: &DockerRunConfig) -> Result<Vec<String>> {
     Ok(args)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn run_container(
-    name: &str,
-    project_dir: &str,
-    image: &str,
-    mount_path: &str,
-    cmd: &[String],
-    env: &[String],
-    docker_args: &str,
-    ssh: bool,
-    detach: bool,
-) -> Result<i32> {
-    let home = config::home_dir();
-    let gitconfig = format!("{}/.gitconfig", home);
-    let gitconfig_exists = Path::new(&gitconfig).exists();
+pub fn run_container(cfg: &DockerRunConfig) -> Result<i32> {
+    ensure_workspace(cfg.home, cfg.name, cfg.project_dir)?;
 
-    ensure_workspace(&home, name, project_dir)?;
-
-    if ssh && std::cfg!(target_os = "macos") {
-        fix_ssh_socket_permissions(image);
+    if cfg.ssh && std::cfg!(target_os = "macos") {
+        fix_ssh_socket_permissions(cfg.image);
     }
 
-    let docker_args_opt = if docker_args.is_empty() {
-        None
-    } else {
-        Some(docker_args)
-    };
+    let args = build_run_args(cfg)?;
 
-    let args = build_run_args(&DockerRunConfig {
-        name,
-        image,
-        mount_path,
-        cmd,
-        env,
-        home: &home,
-        gitconfig_exists,
-        docker_args_env: docker_args_opt,
-        ssh,
-        detach,
-    })?;
-
-    if detach {
+    if cfg.detach {
         let output = Command::new("docker").args(&args).output()?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -248,7 +219,7 @@ pub fn run_container(
         }
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
         println!("{}", container_id);
-        println!("Run `realm {}` to attach.", name);
+        println!("Run `realm {}` to attach.", cfg.name);
         Ok(0)
     } else {
         let status = Command::new("docker")
@@ -357,13 +328,13 @@ mod tests {
     fn default_config<'a>() -> DockerRunConfig<'a> {
         DockerRunConfig {
             name: "sess",
+            project_dir: "/tmp/project",
             image: "alpine:latest",
             mount_path: "/workspace",
             cmd: &[],
             env: &[],
             home: "/home/user",
-            gitconfig_exists: false,
-            docker_args_env: None,
+            docker_args: None,
             ssh: false,
             detach: false,
         }
@@ -430,28 +401,9 @@ mod tests {
     }
 
     #[test]
-    fn test_build_run_args_with_gitconfig() {
+    fn test_build_run_args_with_docker_args() {
         let args = build_run_args(&DockerRunConfig {
-            gitconfig_exists: true,
-            ..default_config()
-        })
-        .unwrap();
-
-        assert!(args.contains(&"-v".to_string()));
-        assert!(args.contains(&"/home/user/.gitconfig:/root/.gitconfig:ro".to_string()));
-    }
-
-    #[test]
-    fn test_build_run_args_without_gitconfig() {
-        let args = build_run_args(&default_config()).unwrap();
-
-        assert!(!args.contains(&"/home/user/.gitconfig:/root/.gitconfig:ro".to_string()));
-    }
-
-    #[test]
-    fn test_build_run_args_with_docker_args_env() {
-        let args = build_run_args(&DockerRunConfig {
-            docker_args_env: Some("--network host -v /data:/data:ro"),
+            docker_args: Some("--network host -v /data:/data:ro"),
             ..default_config()
         })
         .unwrap();
@@ -464,7 +416,7 @@ mod tests {
     #[test]
     fn test_build_run_args_docker_args_with_quotes() {
         let args = build_run_args(&DockerRunConfig {
-            docker_args_env: Some("-e 'FOO=hello world'"),
+            docker_args: Some("-e 'FOO=hello world'"),
             ..default_config()
         })
         .unwrap();
@@ -476,7 +428,7 @@ mod tests {
     #[test]
     fn test_build_run_args_empty_docker_args() {
         let args = build_run_args(&DockerRunConfig {
-            docker_args_env: Some(""),
+            docker_args: Some(""),
             ..default_config()
         })
         .unwrap();
@@ -488,7 +440,7 @@ mod tests {
     #[test]
     fn test_build_run_args_invalid_docker_args() {
         let result = build_run_args(&DockerRunConfig {
-            docker_args_env: Some("--flag 'unclosed quote"),
+            docker_args: Some("--flag 'unclosed quote"),
             ..default_config()
         });
 
@@ -496,7 +448,7 @@ mod tests {
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("Failed to parse REALM_DOCKER_ARGS"));
+            .contains("Failed to parse docker args"));
     }
 
     #[test]

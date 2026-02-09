@@ -139,18 +139,26 @@ fn cmd_create(
     let sess = session::Session::from(cfg);
     session::save(&sess)?;
 
+    let home = config::home_dir()?;
+    let docker_args_opt = if docker_args.is_empty() {
+        None
+    } else {
+        Some(docker_args)
+    };
+
     docker::remove_container(name);
-    docker::run_container(
+    docker::run_container(&docker::DockerRunConfig {
         name,
-        &sess.project_dir,
-        &sess.image,
-        &sess.mount_path,
-        &sess.command,
-        &sess.env,
-        docker_args,
-        sess.ssh,
+        project_dir: &sess.project_dir,
+        image: &sess.image,
+        mount_path: &sess.mount_path,
+        cmd: &sess.command,
+        env: &sess.env,
+        home: &home,
+        docker_args: docker_args_opt,
+        ssh: sess.ssh,
         detach,
-    )
+    })
 }
 
 fn cmd_create_or_resume(
@@ -211,18 +219,26 @@ fn cmd_resume(
         } else {
             cmd
         };
+        let home = config::home_dir()?;
+        let docker_args_opt = if docker_args.is_empty() {
+            None
+        } else {
+            Some(docker_args)
+        };
+
         docker::remove_container(name);
-        docker::run_container(
+        docker::run_container(&docker::DockerRunConfig {
             name,
-            &sess.project_dir,
-            &sess.image,
-            &sess.mount_path,
-            &final_cmd,
-            &sess.env,
-            docker_args,
+            project_dir: &sess.project_dir,
+            image: &sess.image,
+            mount_path: &sess.mount_path,
+            cmd: &final_cmd,
+            env: &sess.env,
+            home: &home,
+            docker_args: docker_args_opt,
             ssh,
             detach,
-        )
+        })
     }
 }
 
@@ -280,7 +296,7 @@ fn cmd_upgrade() -> Result<i32> {
     println!("Installing update...");
     self_update::self_replace::self_replace(&tmp_path).map_err(|e| {
         let msg = e.to_string();
-        if msg.contains("ermission denied") {
+        if msg.to_lowercase().contains("permission denied") {
             anyhow::anyhow!(
                 "Permission denied. Try running with elevated privileges (e.g., sudo realm upgrade)."
             )

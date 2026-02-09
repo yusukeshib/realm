@@ -38,10 +38,10 @@ pub struct SessionSummary {
     pub running: bool,
 }
 
-pub fn sessions_dir() -> PathBuf {
-    PathBuf::from(config::home_dir())
+pub fn sessions_dir() -> Result<PathBuf> {
+    Ok(PathBuf::from(config::home_dir()?)
         .join(".realm")
-        .join("sessions")
+        .join("sessions"))
 }
 
 const RESERVED_NAMES: &[&str] = &["upgrade"];
@@ -69,11 +69,20 @@ pub fn validate_name(name: &str) -> Result<()> {
 }
 
 pub fn session_exists(name: &str) -> bool {
-    sessions_dir().join(name).is_dir()
+    match sessions_dir() {
+        Ok(dir) => dir.join(name).is_dir(),
+        Err(e) => {
+            eprintln!(
+                "Failed to determine sessions directory while checking if session '{}' exists: {}",
+                name, e
+            );
+            false
+        }
+    }
 }
 
 pub fn save(session: &Session) -> Result<()> {
-    let dir = sessions_dir().join(&session.name);
+    let dir = sessions_dir()?.join(&session.name);
     fs::create_dir_all(&dir).context("Failed to create session directory")?;
 
     fs::write(dir.join("project_dir"), &session.project_dir)?;
@@ -105,7 +114,7 @@ pub fn save(session: &Session) -> Result<()> {
 }
 
 pub fn load(name: &str) -> Result<Session> {
-    let dir = sessions_dir().join(name);
+    let dir = sessions_dir()?.join(name);
     if !dir.is_dir() {
         bail!("Session '{}' not found.", name);
     }
@@ -156,7 +165,7 @@ pub fn load(name: &str) -> Result<Session> {
 }
 
 pub fn list() -> Result<Vec<SessionSummary>> {
-    let dir = sessions_dir();
+    let dir = sessions_dir()?;
     if !dir.is_dir() {
         return Ok(Vec::new());
     }
@@ -195,12 +204,12 @@ pub fn list() -> Result<Vec<SessionSummary>> {
 }
 
 pub fn remove_dir(name: &str) -> Result<()> {
-    let dir = sessions_dir().join(name);
+    let dir = sessions_dir()?.join(name);
     fs::remove_dir_all(&dir).context(format!("Failed to remove session directory for '{}'", name))
 }
 
 pub fn touch_resumed_at(name: &str) -> Result<()> {
-    let dir = sessions_dir().join(name);
+    let dir = sessions_dir()?.join(name);
     fs::write(
         dir.join("resumed_at"),
         Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
@@ -268,7 +277,7 @@ mod tests {
     #[test]
     fn test_sessions_dir() {
         with_temp_home(|tmp| {
-            let dir = sessions_dir();
+            let dir = sessions_dir().unwrap();
             assert_eq!(dir, tmp.join(".realm").join("sessions"));
         });
     }
@@ -333,7 +342,7 @@ mod tests {
             };
             save(&sess).unwrap();
 
-            let dir = sessions_dir().join("meta-test");
+            let dir = sessions_dir().unwrap().join("meta-test");
             assert!(dir.join("project_dir").exists());
             assert!(dir.join("image").exists());
             assert!(dir.join("mount_path").exists());
@@ -356,7 +365,7 @@ mod tests {
     #[test]
     fn test_load_missing_project_dir() {
         with_temp_home(|_| {
-            let dir = sessions_dir().join("broken");
+            let dir = sessions_dir().unwrap().join("broken");
             fs::create_dir_all(&dir).unwrap();
             // Don't write project_dir file
 
@@ -370,7 +379,7 @@ mod tests {
     #[test]
     fn test_load_defaults_when_optional_files_missing() {
         with_temp_home(|_| {
-            let dir = sessions_dir().join("minimal");
+            let dir = sessions_dir().unwrap().join("minimal");
             fs::create_dir_all(&dir).unwrap();
             fs::write(dir.join("project_dir"), "/tmp/project").unwrap();
             // Don't write image or mount_path
@@ -499,7 +508,7 @@ mod tests {
 
             touch_resumed_at("resume-test").unwrap();
 
-            let dir = sessions_dir().join("resume-test");
+            let dir = sessions_dir().unwrap().join("resume-test");
             let content = fs::read_to_string(dir.join("resumed_at")).unwrap();
             assert!(content.ends_with("UTC"));
         });
@@ -508,7 +517,7 @@ mod tests {
     #[test]
     fn test_save_trims_whitespace_on_load() {
         with_temp_home(|_| {
-            let dir = sessions_dir().join("trim-test");
+            let dir = sessions_dir().unwrap().join("trim-test");
             fs::create_dir_all(&dir).unwrap();
             fs::write(dir.join("project_dir"), "  /tmp/project  \n").unwrap();
             fs::write(dir.join("image"), " ubuntu:latest \n").unwrap();
@@ -535,7 +544,7 @@ mod tests {
             };
             save(&sess).unwrap();
 
-            let dir = sessions_dir().join("cmd-format");
+            let dir = sessions_dir().unwrap().join("cmd-format");
             let raw = fs::read_to_string(dir.join("command")).unwrap();
             assert_eq!(raw, "bash\0-c\0echo hi");
         });
@@ -558,7 +567,7 @@ mod tests {
             let loaded = load("env-test").unwrap();
             assert_eq!(loaded.env, vec!["FOO=bar", "BAZ"]);
 
-            let dir = sessions_dir().join("env-test");
+            let dir = sessions_dir().unwrap().join("env-test");
             let raw = fs::read_to_string(dir.join("env")).unwrap();
             assert_eq!(raw, "FOO=bar\0BAZ");
         });
@@ -578,7 +587,7 @@ mod tests {
             };
             save(&sess).unwrap();
 
-            let dir = sessions_dir().join("no-env");
+            let dir = sessions_dir().unwrap().join("no-env");
             assert!(!dir.join("env").exists());
 
             let loaded = load("no-env").unwrap();
