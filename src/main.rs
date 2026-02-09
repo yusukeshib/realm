@@ -7,7 +7,7 @@ mod tui;
 use anyhow::{bail, Result};
 use clap::Parser;
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::path::Path;
 
 #[derive(Parser)]
@@ -55,10 +55,7 @@ fn main() {
         .unwrap_or_default();
 
     let result = match cli.name.as_deref() {
-        None if cli.delete => {
-            eprintln!("Error: Session name required for --delete.");
-            std::process::exit(1);
-        }
+        None if cli.delete => cmd_delete_interactive(),
         None if cli.detach => {
             eprintln!("Error: Session name required for -d.");
             std::process::exit(1);
@@ -335,6 +332,43 @@ fn upgrade_download(url: &str) -> Result<std::path::PathBuf> {
     }
 
     Ok(tmp_path)
+}
+
+fn cmd_delete_interactive() -> Result<i32> {
+    let mut sessions = session::list()?;
+    if sessions.is_empty() {
+        println!("No sessions found.");
+        return Ok(0);
+    }
+
+    docker::check()?;
+    let running = docker::running_sessions();
+    for s in &mut sessions {
+        s.running = running.contains(&s.name);
+    }
+
+    let selected = tui::select_sessions_to_delete(&sessions)?;
+    if selected.is_empty() {
+        return Ok(0);
+    }
+
+    let names: Vec<&str> = selected
+        .iter()
+        .map(|&i| sessions[i].name.as_str())
+        .collect();
+    eprint!("Delete {}? (y/N): ", names.join(", "));
+    std::io::stderr().flush()?;
+
+    let mut line = String::new();
+    std::io::stdin().lock().read_line(&mut line)?;
+    if !matches!(line.trim(), "y" | "Y") {
+        return Ok(0);
+    }
+
+    for name in &names {
+        cmd_delete(name)?;
+    }
+    Ok(0)
 }
 
 fn cmd_delete(name: &str) -> Result<i32> {

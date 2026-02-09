@@ -6,9 +6,10 @@ Perform the release workflow:
    - `flake.nix` line 16
 3. Run `cargo fmt`.
 4. Run `cargo clippy` — if there are any warnings, fix them.
-5. Review the diff (`git diff`) and write a descriptive commit message:
+5. Create a new branch named `feature/<feature-description>` (e.g. `feature/interactive-session-deletion`).
+6. Review the diff (`git diff`) and commit with a descriptive message:
    - First line: a short summary of what changed (not just the version number)
    - Second line: blank
-   - Third line: `vX.Y.Z` (the new version tag)
+   - Third line: `vX.Y.Z` (the new version)
    For example: `Fix session serialization and centralize HOME resolution\n\nvX.Y.Z`
-6. Push to remote.
+7. Push the branch to remote and create a pull request targeting `main`.
