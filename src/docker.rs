@@ -41,7 +41,7 @@ pub fn ensure_workspace(home: &str, name: &str, project_dir: &str) -> Result<Str
     {
         use std::os::unix::fs::PermissionsExt;
         let mut perms = std::fs::metadata(&dir)?.permissions();
-        perms.set_mode(0o770);
+        perms.set_mode(0o777);
         std::fs::set_permissions(&dir, perms)?;
     }
 
@@ -168,6 +168,13 @@ pub fn build_run_args(cfg: &DockerRunConfig) -> Result<Vec<String>> {
         "-w".into(),
         cfg.mount_path.into(),
     ];
+
+    // Mount host ~/.gitconfig so git user.name/user.email etc. are available
+    let gitconfig = Path::new(cfg.home).join(".gitconfig");
+    if gitconfig.exists() {
+        args.push("-v".into());
+        args.push(format!("{}:/etc/gitconfig:ro", gitconfig.display()));
+    }
 
     if cfg.ssh {
         let (host_path, container_path) = ssh_agent_paths()?;

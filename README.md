@@ -116,13 +116,29 @@ realm experiment-v2
 ## Usage
 
 ```bash
-realm                                               List all sessions (TUI)
+realm                                               Session manager (TUI)
 realm <name> [options] [-- cmd...]                  Create or resume a session
 realm <name> -d [-- cmd...]                         Run detached (background)
 realm <name>                                        Attach to running session
-realm <name> --delete                               Delete a session
 realm upgrade                                       Upgrade to latest version
 ```
+
+### Session manager
+
+Running `realm` with no arguments opens an interactive TUI:
+
+```
+ NAME            STATUS   PROJECT                   IMAGE            CREATED
+  New realm...
+> my-feature     running  /Users/you/projects/app   alpine:latest    2026-02-07 12:00:00 UTC
+  test                    /Users/you/projects/other  ubuntu:latest   2026-02-07 12:30:00 UTC
+
+ [Enter] Resume  [d] Delete  [q] Quit
+```
+
+- **Enter** on a session to resume it, or on "New realm..." to create a new one
+- **d** to delete the highlighted session (with confirmation)
+- **q** / **Esc** to quit
 
 ### Create or resume a session
 
@@ -155,31 +171,11 @@ realm my-feature
 # Detach without stopping: Ctrl+P, Ctrl+Q
 ```
 
-### List sessions
-
-```bash
-realm
-```
-
-```
-NAME                 PROJECT                        IMAGE                CREATED
-----                 -------                        -----                -------
-my-feature           /Users/you/projects/app        alpine:latest           2026-02-07 12:00:00 UTC
-test                 /Users/you/projects/other      ubuntu:latest        2026-02-07 12:30:00 UTC
-```
-
-### Delete a session
-
-```bash
-realm my-feature --delete
-```
-
 ## Options
 
 | Option | Description |
 |--------|-------------|
 | `-d` | Run container in the background (detached) |
-| `--delete` | Delete the session |
 | `--image <image>` | Docker image to use (default: `alpine:latest`) - only used when creating |
 | `--docker-args <args>` | Extra Docker flags (e.g. `-e KEY=VALUE`, `-v /host:/container`). Overrides `$REALM_DOCKER_ARGS` |
 | `--no-ssh` | Disable SSH agent forwarding (enabled by default) |
@@ -207,14 +203,14 @@ realm my-session --docker-args "-e DEBUG=1"
 On first run, `git clone --local` creates an independent copy of your repo in the workspace directory. The container gets a fully self-contained git repo — no special mounts or entrypoint scripts needed. Your host working directory is never modified.
 
 - **Independent clone** — Each session gets its own complete git repo via `git clone --local`
-- **Persistent workspace** — Files survive `exit` and `realm <name>` resume; cleaned up on `realm <name> --delete`
+- **Persistent workspace** — Files survive `exit` and `realm <name>` resume; cleaned up when deleted via the session manager
 - **Any image, any user** — Works with root and non-root container images
 
 | Aspect | Protection |
 |--------|------------|
 | Host working tree | Never modified — workspace is an independent clone |
 | Workspace | Bind-mounted from `~/.realm/workspaces/<name>/`, persists across stop/start |
-| Session cleanup | `realm <name> --delete` removes container, workspace, and session data |
+| Session cleanup | Delete via session manager removes container, workspace, and session data |
 
 ## Design Decisions
 

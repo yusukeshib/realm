@@ -30,6 +30,7 @@ impl From<config::RealmConfig> for Session {
     }
 }
 
+#[derive(Clone)]
 pub struct SessionSummary {
     pub name: String,
     pub project_dir: String,
@@ -68,17 +69,8 @@ pub fn validate_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn session_exists(name: &str) -> bool {
-    match sessions_dir() {
-        Ok(dir) => dir.join(name).is_dir(),
-        Err(e) => {
-            eprintln!(
-                "Failed to determine sessions directory while checking if session '{}' exists: {}",
-                name, e
-            );
-            false
-        }
-    }
+pub fn session_exists(name: &str) -> Result<bool> {
+    Ok(sessions_dir()?.join(name).is_dir())
 }
 
 pub fn save(session: &Session) -> Result<()> {
@@ -399,7 +391,7 @@ mod tests {
     #[test]
     fn test_session_exists() {
         with_temp_home(|_| {
-            assert!(!session_exists("nope"));
+            assert!(!session_exists("nope").unwrap());
 
             let sess = Session {
                 name: "exists-test".to_string(),
@@ -411,7 +403,7 @@ mod tests {
                 ssh: false,
             };
             save(&sess).unwrap();
-            assert!(session_exists("exists-test"));
+            assert!(session_exists("exists-test").unwrap());
         });
     }
 
@@ -483,10 +475,10 @@ mod tests {
                 ssh: false,
             };
             save(&sess).unwrap();
-            assert!(session_exists("to-remove"));
+            assert!(session_exists("to-remove").unwrap());
 
             remove_dir("to-remove").unwrap();
-            assert!(!session_exists("to-remove"));
+            assert!(!session_exists("to-remove").unwrap());
         });
     }
 

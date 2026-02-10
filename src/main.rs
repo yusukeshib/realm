@@ -7,14 +7,14 @@ mod tui;
 use anyhow::{bail, Result};
 use clap::Parser;
 use std::fs;
-use std::io::{BufRead, Write};
+use std::io::Write;
 use std::path::Path;
 
 #[derive(Parser)]
 #[command(
     name = "realm",
     about = "Sandboxed Docker environments for git repos",
-    after_help = "Examples:\n  realm my-feature --image ubuntu:latest -- bash\n  realm my-feature\n  realm my-feature -d -- claude -p \"do something\"\n  realm my-feature --delete\n  realm path my-feature\n  realm upgrade\n\nSessions are automatically created if they don't exist."
+    after_help = "Examples:\n  realm                                    # interactive session manager\n  realm my-feature --image ubuntu:latest -- bash\n  realm my-feature\n  realm my-feature -d -- claude -p \"do something\"\n  realm path my-feature\n  realm upgrade\n\nSessions are automatically created if they don't exist."
 )]
 struct Cli {
     /// Session name or subcommand-like keyword (e.g. 'path', 'upgrade')
@@ -24,12 +24,8 @@ struct Cli {
     arg: Option<String>,
 
     /// Run container in the background (detached)
-    #[arg(short = 'd', conflicts_with = "delete")]
+    #[arg(short = 'd')]
     detach: bool,
-
-    /// Delete the session
-    #[arg(long)]
-    delete: bool,
 
     /// Docker image to use (default: $REALM_DEFAULT_IMAGE or alpine:latest)
     #[arg(long)]
@@ -59,7 +55,6 @@ fn main() {
         .unwrap_or_default();
 
     let result = match cli.name.as_deref() {
-        None if cli.delete => cmd_delete_interactive(),
         None if cli.detach => {
             eprintln!("Error: Session name required for -d.");
             std::process::exit(1);
@@ -72,7 +67,6 @@ fn main() {
         Some("upgrade") => cmd_upgrade(),
         Some("path")
             if cli.detach
-                || cli.delete
                 || cli.image.is_some()
                 || has_docker_args
                 || cli.no_ssh
@@ -86,7 +80,6 @@ fn main() {
             eprintln!("Error: unexpected argument '{}'.", cli.arg.unwrap());
             std::process::exit(1);
         }
-        Some(_) if cli.delete => cmd_delete(cli.name.as_deref().unwrap()),
         Some(name) => cmd_create_or_resume(
             name,
             cli.image,
@@ -108,10 +101,6 @@ fn main() {
 
 fn cmd_list() -> Result<i32> {
     let mut sessions = session::list()?;
-    if sessions.is_empty() {
-        println!("No sessions found.");
-        return Ok(0);
-    }
 
     docker::check()?;
     let running = docker::running_sessions();
@@ -119,9 +108,17 @@ fn cmd_list() -> Result<i32> {
         s.running = running.contains(&s.name);
     }
 
-    match tui::select_session(&sessions)? {
-        Some(i) => cmd_resume(&sessions[i].name, "", vec![], true, false),
-        None => Ok(0),
+    let delete_fn = |name: &str| -> Result<()> {
+        docker::remove_container(name);
+        docker::remove_workspace(name);
+        session::remove_dir(name)?;
+        Ok(())
+    };
+
+    match tui::session_manager(&sessions, delete_fn)? {
+        tui::TuiAction::Resume(name) => cmd_resume(&name, "", vec![], true, false),
+        tui::TuiAction::New { name, image } => cmd_create(&name, image, "", vec![], true, false),
+        tui::TuiAction::Quit => Ok(0),
     }
 }
 
@@ -190,7 +187,7 @@ fn cmd_create_or_resume(
     detach: bool,
 ) -> Result<i32> {
     // Check if session exists
-    if session::session_exists(name) {
+    if session::session_exists(name)? {
         // Session exists - resume it
         return cmd_resume(name, &docker_args, cmd, ssh, detach);
     }
@@ -265,7 +262,7 @@ fn cmd_resume(
 fn cmd_path(arg: Option<&str>) -> Result<i32> {
     let name = arg.ok_or_else(|| anyhow::anyhow!("Usage: realm path <session-name>"))?;
     session::validate_name(name)?;
-    if !session::session_exists(name) {
+    if !session::session_exists(name)? {
         bail!("Session '{}' not found.", name);
     }
     let home = config::home_dir()?;
@@ -385,61 +382,6 @@ fn upgrade_download(url: &str) -> Result<std::path::PathBuf> {
     Ok(tmp_path)
 }
 
-fn cmd_delete_interactive() -> Result<i32> {
-    let mut sessions = session::list()?;
-    if sessions.is_empty() {
-        println!("No sessions found.");
-        return Ok(0);
-    }
-
-    docker::check()?;
-    let running = docker::running_sessions();
-    for s in &mut sessions {
-        s.running = running.contains(&s.name);
-    }
-
-    let selected = tui::select_sessions_to_delete(&sessions)?;
-    if selected.is_empty() {
-        return Ok(0);
-    }
-
-    let names: Vec<&str> = selected
-        .iter()
-        .map(|&i| sessions[i].name.as_str())
-        .collect();
-    eprint!("Delete {}? (y/N): ", names.join(", "));
-    std::io::stderr().flush()?;
-
-    let mut line = String::new();
-    std::io::stdin().lock().read_line(&mut line)?;
-    if !matches!(line.trim(), "y" | "Y") {
-        return Ok(0);
-    }
-
-    let mut exit_code = 0;
-    for name in &names {
-        let code = cmd_delete(name)?;
-        if exit_code == 0 && code != 0 {
-            exit_code = code;
-        }
-    }
-    Ok(exit_code)
-}
-
-fn cmd_delete(name: &str) -> Result<i32> {
-    session::validate_name(name)?;
-
-    if !session::session_exists(name) {
-        bail!("Session '{}' not found.", name);
-    }
-
-    docker::remove_container(name);
-    docker::remove_workspace(name);
-    session::remove_dir(name)?;
-    println!("Session '{}' removed.", name);
-    Ok(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,7 +397,6 @@ mod tests {
     fn test_no_args_lists() {
         let cli = parse(&[]);
         assert!(cli.name.is_none());
-        assert!(!cli.delete);
         assert!(!cli.detach);
     }
 
@@ -463,23 +404,7 @@ mod tests {
     fn test_name_only_resumes() {
         let cli = parse(&["my-session"]);
         assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert!(!cli.delete);
         assert!(!cli.detach);
-    }
-
-    #[test]
-    fn test_delete_flag_long() {
-        let cli = parse(&["my-session", "--delete"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert!(cli.delete);
-        assert!(!cli.detach);
-    }
-
-    #[test]
-    fn test_delete_flag_before_name() {
-        let cli = parse(&["--delete", "my-session"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert!(cli.delete);
     }
 
     #[test]
@@ -487,7 +412,6 @@ mod tests {
         let cli = parse(&["-d", "my-session"]);
         assert_eq!(cli.name.as_deref(), Some("my-session"));
         assert!(cli.detach);
-        assert!(!cli.delete);
     }
 
     #[test]
@@ -495,7 +419,6 @@ mod tests {
         let cli = parse(&["my-session", "-d"]);
         assert_eq!(cli.name.as_deref(), Some("my-session"));
         assert!(cli.detach);
-        assert!(!cli.delete);
     }
 
     #[test]
@@ -504,12 +427,6 @@ mod tests {
         assert_eq!(cli.name.as_deref(), Some("my-session"));
         assert!(cli.detach);
         assert_eq!(cli.cmd, vec!["sleep", "60"]);
-    }
-
-    #[test]
-    fn test_detach_and_delete_conflict() {
-        let result = Cli::try_parse_from(["realm", "my-session", "-d", "--delete"]);
-        assert!(result.is_err());
     }
 
     #[test]
@@ -576,13 +493,6 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_without_name() {
-        let cli = parse(&["--delete"]);
-        assert!(cli.name.is_none());
-        assert!(cli.delete);
-    }
-
-    #[test]
     fn test_path_subcommand_parses() {
         let cli = parse(&["path", "my-session"]);
         assert_eq!(cli.name.as_deref(), Some("path"));
@@ -594,14 +504,6 @@ mod tests {
         let cli = parse(&["my-session"]);
         assert_eq!(cli.name.as_deref(), Some("my-session"));
         assert!(cli.arg.is_none());
-    }
-
-    #[test]
-    fn test_path_with_flags_detected() {
-        // Verify that flags parsed alongside 'path' are detected for rejection
-        let cli = parse(&["path", "foo", "--delete"]);
-        assert_eq!(cli.name.as_deref(), Some("path"));
-        assert!(cli.delete);
     }
 
     #[test]
