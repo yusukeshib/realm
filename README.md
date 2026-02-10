@@ -76,32 +76,16 @@ Include whatever tools your workflow needs (languages, runtimes, CLI tools, etc.
 docker build -t mydev .
 ```
 
-**3. Run interactively to configure auth/state**
-
-Some tools (like Claude Code) need interactive authentication that can't be baked into a Dockerfile. Run the image, complete the setup, then save the result:
-
-```bash
-docker run -it mydev
-# Inside the container: run `claude` to authenticate, install extras, etc.
-# When done:
-exit
-```
-
-```bash
-# Find the container ID and commit the configured state
-docker commit <container_id> mydev:ready
-```
-
-**4. Set environment variables**
+**3. Set environment variables**
 
 Add these to your `.zshrc` or `.bashrc`:
 
 ```bash
-export REALM_DEFAULT_IMAGE=mydev:ready        # your custom image
+export REALM_DEFAULT_IMAGE=mydev              # your custom image
 export REALM_DOCKER_ARGS="--network host"     # any extra Docker flags you always want
 ```
 
-**5. Done — just use realm**
+**4. Done — just use realm**
 
 With those env vars set, every session uses your custom image with zero flags:
 

@@ -76,32 +76,16 @@ Realmの推奨ワークフロー：イメージを一度ビルドし、環境変
 docker build -t mydev .
 ```
 
-**3. 対話的に実行して認証・設定を行う**
-
-Claude Codeなど一部のツールは、Dockerfileに組み込めない対話的な認証が必要です。イメージを実行してセットアップを完了し、その状態を保存します：
-
-```bash
-docker run -it mydev
-# コンテナ内で: `claude` を実行して認証、追加ツールのインストールなど
-# 完了したら:
-exit
-```
-
-```bash
-# コンテナIDを確認し、設定済みの状態をコミット
-docker commit <container_id> mydev:ready
-```
-
-**4. 環境変数を設定**
+**3. 環境変数を設定**
 
 `.zshrc` または `.bashrc` に以下を追加：
 
 ```bash
-export REALM_DEFAULT_IMAGE=mydev:ready        # カスタムイメージ
+export REALM_DEFAULT_IMAGE=mydev              # カスタムイメージ
 export REALM_DOCKER_ARGS="--network host"     # 常に使いたいDockerフラグ
 ```
 
-**5. 完了 — あとは realm を使うだけ**
+**4. 完了 — あとは realm を使うだけ**
 
 環境変数を設定すれば、すべてのセッションがフラグなしでカスタムイメージを使用します：
 
