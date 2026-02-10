@@ -17,7 +17,7 @@ Sleep 500ms
 Type "realm"
 Sleep 300ms
 Enter
-Sleep 2s
+Sleep 1s
 
 # ── 2. Create a new session ────────────────────────────────────
 
@@ -35,7 +35,7 @@ Sleep 500ms
 Enter
 
 # Wait for workspace clone + container start
-Sleep 10s
+Sleep 500ms
 
 # ── 3. Work inside the container ───────────────────────────────
 
@@ -66,7 +66,7 @@ Sleep 1s
 Type "realm my-feature"
 Sleep 300ms
 Enter
-Sleep 5s
+Sleep 2s
 
 Type "echo 'Welcome back!'"
 Sleep 200ms
@@ -91,4 +91,4 @@ Sleep 1s
 
 # Quit
 Type "q"
-Sleep 1s
+Sleep 5s
