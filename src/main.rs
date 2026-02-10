@@ -5,7 +5,7 @@ mod session;
 mod tui;
 
 use anyhow::{bail, Result};
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -14,14 +14,21 @@ use std::path::Path;
 #[command(
     name = "realm",
     about = "Sandboxed Docker environments for git repos",
+    args_conflicts_with_subcommands = true,
     after_help = "Examples:\n  realm                                    # interactive session manager\n  realm my-feature --image ubuntu:latest -- bash\n  realm my-feature\n  realm my-feature -d -- claude -p \"do something\"\n  realm path my-feature\n  realm upgrade\n\nSessions are automatically created if they don't exist."
 )]
 struct Cli {
-    /// Session name or subcommand-like keyword (e.g. 'path', 'upgrade')
-    name: Option<String>,
+    #[command(subcommand)]
+    command: Option<Commands>,
 
-    /// Subcommand argument (only valid when `name` is 'path', e.g. session name for 'path')
-    arg: Option<String>,
+    #[command(flatten)]
+    session: SessionArgs,
+}
+
+#[derive(Args, Debug)]
+struct SessionArgs {
+    /// Session name
+    name: Option<String>,
 
     /// Run container in the background (detached)
     #[arg(short = 'd')]
@@ -45,49 +52,46 @@ struct Cli {
     cmd: Vec<String>,
 }
 
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Print workspace path for a session
+    Path {
+        /// Session name
+        name: String,
+    },
+    /// Self-update to the latest version
+    Upgrade,
+}
+
 fn main() {
     let cli = Cli::parse();
 
-    let has_docker_args = cli.docker_args.is_some();
-    let docker_args = cli
-        .docker_args
-        .or_else(|| std::env::var("REALM_DOCKER_ARGS").ok())
-        .unwrap_or_default();
+    let result = match cli.command {
+        Some(Commands::Path { name }) => cmd_path(&name),
+        Some(Commands::Upgrade) => cmd_upgrade(),
+        None => {
+            let session = cli.session;
+            let docker_args = session
+                .docker_args
+                .or_else(|| std::env::var("REALM_DOCKER_ARGS").ok())
+                .unwrap_or_default();
 
-    let result = match cli.name.as_deref() {
-        None if cli.detach => {
-            eprintln!("Error: Session name required for -d.");
-            std::process::exit(1);
+            match session.name.as_deref() {
+                None if session.detach => {
+                    eprintln!("Error: Session name required for -d.");
+                    std::process::exit(1);
+                }
+                None => cmd_list(),
+                Some(name) => cmd_create_or_resume(
+                    name,
+                    session.image,
+                    docker_args,
+                    session.cmd,
+                    !session.no_ssh,
+                    session.detach,
+                ),
+            }
         }
-        None => cmd_list(),
-        Some("upgrade") if cli.detach => {
-            eprintln!("Error: -d cannot be used with upgrade.");
-            std::process::exit(1);
-        }
-        Some("upgrade") => cmd_upgrade(),
-        Some("path")
-            if cli.detach
-                || cli.image.is_some()
-                || has_docker_args
-                || cli.no_ssh
-                || !cli.cmd.is_empty() =>
-        {
-            eprintln!("Error: 'realm path' does not accept flags or commands.");
-            std::process::exit(1);
-        }
-        Some("path") => cmd_path(cli.arg.as_deref()),
-        Some(_) if cli.arg.is_some() => {
-            eprintln!("Error: unexpected argument '{}'.", cli.arg.unwrap());
-            std::process::exit(1);
-        }
-        Some(name) => cmd_create_or_resume(
-            name,
-            cli.image,
-            docker_args,
-            cli.cmd,
-            !cli.no_ssh,
-            cli.detach,
-        ),
     };
 
     match result {
@@ -264,8 +268,7 @@ fn cmd_resume(
     }
 }
 
-fn cmd_path(arg: Option<&str>) -> Result<i32> {
-    let name = arg.ok_or_else(|| anyhow::anyhow!("Usage: realm path <session-name>"))?;
+fn cmd_path(name: &str) -> Result<i32> {
     session::validate_name(name)?;
     if !session::session_exists(name)? {
         bail!("Session '{}' not found.", name);
@@ -398,68 +401,76 @@ mod tests {
         Cli::try_parse_from(full_args).unwrap()
     }
 
+    fn try_parse(args: &[&str]) -> Result<Cli, clap::Error> {
+        let mut full_args = vec!["realm"];
+        full_args.extend_from_slice(args);
+        Cli::try_parse_from(full_args)
+    }
+
     #[test]
     fn test_no_args_lists() {
         let cli = parse(&[]);
-        assert!(cli.name.is_none());
-        assert!(!cli.detach);
+        assert!(cli.command.is_none());
+        assert!(cli.session.name.is_none());
+        assert!(!cli.session.detach);
     }
 
     #[test]
     fn test_name_only_resumes() {
         let cli = parse(&["my-session"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert!(!cli.detach);
+        assert!(cli.command.is_none());
+        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
+        assert!(!cli.session.detach);
     }
 
     #[test]
     fn test_detach_flag_before_name() {
         let cli = parse(&["-d", "my-session"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert!(cli.detach);
+        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
+        assert!(cli.session.detach);
     }
 
     #[test]
     fn test_detach_flag_after_name() {
         let cli = parse(&["my-session", "-d"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert!(cli.detach);
+        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
+        assert!(cli.session.detach);
     }
 
     #[test]
     fn test_detach_with_command() {
         let cli = parse(&["my-session", "-d", "--", "sleep", "60"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert!(cli.detach);
-        assert_eq!(cli.cmd, vec!["sleep", "60"]);
+        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
+        assert!(cli.session.detach);
+        assert_eq!(cli.session.cmd, vec!["sleep", "60"]);
     }
 
     #[test]
     fn test_detach_without_name() {
         let cli = parse(&["-d"]);
-        assert!(cli.name.is_none());
-        assert!(cli.detach);
+        assert!(cli.session.name.is_none());
+        assert!(cli.session.detach);
     }
 
     #[test]
     fn test_create_with_image() {
         let cli = parse(&["my-session", "--image", "ubuntu:latest"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.image.as_deref(), Some("ubuntu:latest"));
+        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
+        assert_eq!(cli.session.image.as_deref(), Some("ubuntu:latest"));
     }
 
     #[test]
     fn test_with_command() {
         let cli = parse(&["my-session", "--", "bash", "-c", "echo hi"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.cmd, vec!["bash", "-c", "echo hi"]);
+        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
+        assert_eq!(cli.session.cmd, vec!["bash", "-c", "echo hi"]);
     }
 
     #[test]
     fn test_create_with_command() {
         let cli = parse(&["my-session", "--", "bash"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.cmd, vec!["bash"]);
+        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
+        assert_eq!(cli.session.cmd, vec!["bash"]);
     }
 
     #[test]
@@ -474,56 +485,77 @@ mod tests {
             "python",
             "main.py",
         ]);
-        assert_eq!(cli.name.as_deref(), Some("full-session"));
-        assert_eq!(cli.image.as_deref(), Some("python:3.11"));
+        assert_eq!(cli.session.name.as_deref(), Some("full-session"));
+        assert_eq!(cli.session.image.as_deref(), Some("python:3.11"));
         assert_eq!(
-            cli.docker_args.as_deref(),
+            cli.session.docker_args.as_deref(),
             Some("-e FOO=bar --network host")
         );
-        assert_eq!(cli.cmd, vec!["python", "main.py"]);
+        assert_eq!(cli.session.cmd, vec!["python", "main.py"]);
     }
 
     #[test]
     fn test_docker_args() {
         let cli = parse(&["my-session", "--docker-args", "-e KEY=val -v /a:/b"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.docker_args.as_deref(), Some("-e KEY=val -v /a:/b"));
+        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
+        assert_eq!(
+            cli.session.docker_args.as_deref(),
+            Some("-e KEY=val -v /a:/b")
+        );
     }
 
     #[test]
     fn test_empty_command_after_separator() {
         let cli = parse(&["my-session", "--"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert!(cli.cmd.is_empty());
+        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
+        assert!(cli.session.cmd.is_empty());
     }
 
     #[test]
     fn test_path_subcommand_parses() {
         let cli = parse(&["path", "my-session"]);
-        assert_eq!(cli.name.as_deref(), Some("path"));
-        assert_eq!(cli.arg.as_deref(), Some("my-session"));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Path { ref name }) if name == "my-session"
+        ));
     }
 
     #[test]
-    fn test_regular_session_no_arg() {
-        let cli = parse(&["my-session"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert!(cli.arg.is_none());
+    fn test_path_requires_name() {
+        let result = try_parse(&["path"]);
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_path_with_command_detected() {
-        let cli = parse(&["path", "foo", "--", "bash"]);
-        assert_eq!(cli.name.as_deref(), Some("path"));
-        assert!(!cli.cmd.is_empty());
+    fn test_path_with_command_rejected() {
+        // Clap rejects flags on subcommands thanks to args_conflicts_with_subcommands
+        let result = try_parse(&["path", "foo", "--", "bash"]);
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_regular_session_extra_arg_detected() {
-        // Clap still parses this; the runtime match rejects it
-        let cli = parse(&["my-session", "extra"]);
-        assert_eq!(cli.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.arg.as_deref(), Some("extra"));
+    fn test_path_rejects_flags() {
+        let result = try_parse(&["path", "foo", "-d"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_regular_session_extra_arg_rejected() {
+        // With the arg positional removed, extra args are rejected by clap
+        let result = try_parse(&["my-session", "extra"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_upgrade_subcommand_parses() {
+        let cli = parse(&["upgrade"]);
+        assert!(matches!(cli.command, Some(Commands::Upgrade)));
+    }
+
+    #[test]
+    fn test_upgrade_rejects_flags() {
+        let result = try_parse(&["upgrade", "-d"]);
+        assert!(result.is_err());
     }
 
     #[test]
