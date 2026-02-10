@@ -30,6 +30,7 @@ impl From<config::RealmConfig> for Session {
     }
 }
 
+#[derive(Clone)]
 pub struct SessionSummary {
     pub name: String,
     pub project_dir: String,
