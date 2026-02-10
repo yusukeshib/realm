@@ -13,7 +13,7 @@
 
         realm = pkgs.rustPlatform.buildRustPackage {
           pname = "realm";
-          version = "0.0.24";
+          version = "0.0.25";
 
           src = ./.;
 
