@@ -205,6 +205,16 @@ fn cmd_resume(
 ) -> Result<i32> {
     session::validate_name(name)?;
 
+    if !cmd.is_empty() {
+        bail!(
+            "Cannot pass a command when resuming session '{}'.\n\
+             Use `realm {}` to resume, or `realm delete {}` and recreate it.",
+            name,
+            name,
+            name
+        );
+    }
+
     let sess = session::load(name)?;
 
     if !Path::new(&sess.project_dir).is_dir() {
@@ -224,18 +234,13 @@ fn cmd_resume(
     println!("Resuming session '{}'...", name);
     session::touch_resumed_at(name)?;
 
-    if cmd.is_empty() && docker::container_exists(name) {
+    if docker::container_exists(name) {
         if detach {
             docker::start_container_detached(name)
         } else {
             docker::start_container(name)
         }
     } else {
-        let final_cmd = if cmd.is_empty() {
-            sess.command.clone()
-        } else {
-            cmd
-        };
         let home = config::home_dir()?;
         let docker_args_opt = if docker_args.is_empty() {
             None
@@ -249,7 +254,7 @@ fn cmd_resume(
             project_dir: &sess.project_dir,
             image: &sess.image,
             mount_path: &sess.mount_path,
-            cmd: &final_cmd,
+            cmd: &sess.command,
             env: &sess.env,
             home: &home,
             docker_args: docker_args_opt,
@@ -519,5 +524,17 @@ mod tests {
         let cli = parse(&["my-session", "extra"]);
         assert_eq!(cli.name.as_deref(), Some("my-session"));
         assert_eq!(cli.arg.as_deref(), Some("extra"));
+    }
+
+    #[test]
+    fn test_resume_rejects_command() {
+        let result = cmd_resume("test-session", "", vec!["bash".into()], true, false);
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Cannot pass a command when resuming"),
+            "unexpected error: {}",
+            err
+        );
     }
 }
