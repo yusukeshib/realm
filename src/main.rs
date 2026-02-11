@@ -119,9 +119,11 @@ fn cmd_list() -> Result<i32> {
         Ok(())
     };
 
+    let docker_args = std::env::var("REALM_DOCKER_ARGS").unwrap_or_default();
+
     match tui::session_manager(&sessions, delete_fn)? {
-        tui::TuiAction::Resume(name) => cmd_resume(&name, "", vec![], true, false),
-        tui::TuiAction::New { name, image } => cmd_create(&name, image, "", vec![], true, false),
+        tui::TuiAction::Resume(name) => cmd_resume(&name, &docker_args, vec![], true, false),
+        tui::TuiAction::New { name, image } => cmd_create(&name, image, &docker_args, vec![], true, false),
         tui::TuiAction::Quit => Ok(0),
     }
 }
