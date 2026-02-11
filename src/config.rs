@@ -32,23 +32,32 @@ pub struct RealmConfigInput {
     pub ssh: bool,
 }
 
-pub fn resolve(input: RealmConfigInput) -> RealmConfig {
+pub fn resolve(input: RealmConfigInput) -> Result<RealmConfig> {
     let mount_path = input
         .mount_path
         .unwrap_or_else(|| derive_mount_path(&input.project_dir));
     let image = input.image.unwrap_or_else(|| {
         std::env::var("REALM_DEFAULT_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE.to_string())
     });
+    let command = if input.command.is_empty() {
+        match std::env::var("REALM_DEFAULT_CMD") {
+            Ok(val) if !val.is_empty() => shell_words::split(&val)
+                .map_err(|e| anyhow::anyhow!("Failed to parse REALM_DEFAULT_CMD: {}", e))?,
+            _ => vec![],
+        }
+    } else {
+        input.command
+    };
 
-    RealmConfig {
+    Ok(RealmConfig {
         name: input.name,
         project_dir: input.project_dir,
         image,
         mount_path,
-        command: input.command,
+        command,
         env: input.env,
         ssh: input.ssh,
-    }
+    })
 }
 
 pub fn derive_mount_path(project_dir: &str) -> String {
@@ -101,8 +110,10 @@ mod tests {
     #[test]
     fn test_resolve_defaults() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let saved = std::env::var("REALM_DEFAULT_IMAGE").ok();
+        let saved_image = std::env::var("REALM_DEFAULT_IMAGE").ok();
+        let saved_cmd = std::env::var("REALM_DEFAULT_CMD").ok();
         std::env::remove_var("REALM_DEFAULT_IMAGE");
+        std::env::remove_var("REALM_DEFAULT_CMD");
 
         let config = resolve(RealmConfigInput {
             name: "test".to_string(),
@@ -112,7 +123,8 @@ mod tests {
             command: vec![],
             env: vec![],
             ssh: false,
-        });
+        })
+        .unwrap();
 
         assert_eq!(
             config,
@@ -127,13 +139,18 @@ mod tests {
             }
         );
 
-        if let Some(v) = saved {
+        if let Some(v) = saved_image {
             std::env::set_var("REALM_DEFAULT_IMAGE", v);
+        }
+        if let Some(v) = saved_cmd {
+            std::env::set_var("REALM_DEFAULT_CMD", v);
         }
     }
 
     #[test]
     fn test_resolve_mount_override() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("REALM_DEFAULT_CMD");
         let config = resolve(RealmConfigInput {
             name: "test".to_string(),
             image: None,
@@ -142,13 +159,16 @@ mod tests {
             command: vec![],
             env: vec![],
             ssh: false,
-        });
+        })
+        .unwrap();
 
         assert_eq!(config.mount_path, "/custom");
     }
 
     #[test]
     fn test_resolve_image_override() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("REALM_DEFAULT_CMD");
         let config = resolve(RealmConfigInput {
             name: "test".to_string(),
             image: Some("ubuntu:latest".to_string()),
@@ -157,7 +177,8 @@ mod tests {
             command: vec![],
             env: vec![],
             ssh: false,
-        });
+        })
+        .unwrap();
 
         assert_eq!(config.image, "ubuntu:latest");
     }
@@ -165,6 +186,8 @@ mod tests {
     #[test]
     fn test_resolve_env_default_image() {
         let _lock = ENV_LOCK.lock().unwrap();
+        let saved_cmd = std::env::var("REALM_DEFAULT_CMD").ok();
+        std::env::remove_var("REALM_DEFAULT_CMD");
         std::env::set_var("REALM_DEFAULT_IMAGE", "ubuntu:latest");
         let config = resolve(RealmConfigInput {
             name: "test".to_string(),
@@ -174,14 +197,20 @@ mod tests {
             command: vec![],
             env: vec![],
             ssh: false,
-        });
+        })
+        .unwrap();
         assert_eq!(config.image, "ubuntu:latest");
         std::env::remove_var("REALM_DEFAULT_IMAGE");
+        if let Some(v) = saved_cmd {
+            std::env::set_var("REALM_DEFAULT_CMD", v);
+        }
     }
 
     #[test]
     fn test_resolve_image_flag_overrides_env() {
         let _lock = ENV_LOCK.lock().unwrap();
+        let saved_cmd = std::env::var("REALM_DEFAULT_CMD").ok();
+        std::env::remove_var("REALM_DEFAULT_CMD");
         std::env::set_var("REALM_DEFAULT_IMAGE", "ubuntu:latest");
         let config = resolve(RealmConfigInput {
             name: "test".to_string(),
@@ -191,9 +220,13 @@ mod tests {
             command: vec![],
             env: vec![],
             ssh: false,
-        });
+        })
+        .unwrap();
         assert_eq!(config.image, "python:3.11");
         std::env::remove_var("REALM_DEFAULT_IMAGE");
+        if let Some(v) = saved_cmd {
+            std::env::set_var("REALM_DEFAULT_CMD", v);
+        }
     }
 
     #[test]
@@ -238,6 +271,7 @@ mod tests {
 
     #[test]
     fn test_resolve_full() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let config = resolve(RealmConfigInput {
             name: "full".to_string(),
             image: Some("python:3.11".to_string()),
@@ -246,7 +280,8 @@ mod tests {
             command: vec!["python".to_string(), "main.py".to_string()],
             env: vec!["FOO=bar".to_string()],
             ssh: false,
-        });
+        })
+        .unwrap();
 
         assert_eq!(
             config,
@@ -260,5 +295,146 @@ mod tests {
                 ssh: false,
             }
         );
+    }
+
+    #[test]
+    fn test_resolve_env_default_cmd() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
+        std::env::set_var("REALM_DEFAULT_CMD", "bash");
+        let config = resolve(RealmConfigInput {
+            name: "test".to_string(),
+            image: None,
+            mount_path: None,
+            project_dir: "/home/user/myproject".to_string(),
+            command: vec![],
+            env: vec![],
+            ssh: false,
+        })
+        .unwrap();
+        assert_eq!(config.command, vec!["bash".to_string()]);
+        match saved {
+            Some(v) => std::env::set_var("REALM_DEFAULT_CMD", v),
+            None => std::env::remove_var("REALM_DEFAULT_CMD"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_cli_cmd_overrides_env() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
+        std::env::set_var("REALM_DEFAULT_CMD", "bash");
+        let config = resolve(RealmConfigInput {
+            name: "test".to_string(),
+            image: None,
+            mount_path: None,
+            project_dir: "/home/user/myproject".to_string(),
+            command: vec!["sh".to_string()],
+            env: vec![],
+            ssh: false,
+        })
+        .unwrap();
+        assert_eq!(config.command, vec!["sh".to_string()]);
+        match saved {
+            Some(v) => std::env::set_var("REALM_DEFAULT_CMD", v),
+            None => std::env::remove_var("REALM_DEFAULT_CMD"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_env_default_cmd_multi_word() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
+        std::env::set_var("REALM_DEFAULT_CMD", "bash -c 'echo hello'");
+        let config = resolve(RealmConfigInput {
+            name: "test".to_string(),
+            image: None,
+            mount_path: None,
+            project_dir: "/home/user/myproject".to_string(),
+            command: vec![],
+            env: vec![],
+            ssh: false,
+        })
+        .unwrap();
+        assert_eq!(
+            config.command,
+            vec![
+                "bash".to_string(),
+                "-c".to_string(),
+                "echo hello".to_string()
+            ]
+        );
+        match saved {
+            Some(v) => std::env::set_var("REALM_DEFAULT_CMD", v),
+            None => std::env::remove_var("REALM_DEFAULT_CMD"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_env_default_cmd_empty() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
+        std::env::set_var("REALM_DEFAULT_CMD", "");
+        let config = resolve(RealmConfigInput {
+            name: "test".to_string(),
+            image: None,
+            mount_path: None,
+            project_dir: "/home/user/myproject".to_string(),
+            command: vec![],
+            env: vec![],
+            ssh: false,
+        })
+        .unwrap();
+        assert_eq!(config.command, Vec::<String>::new());
+        match saved {
+            Some(v) => std::env::set_var("REALM_DEFAULT_CMD", v),
+            None => std::env::remove_var("REALM_DEFAULT_CMD"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_env_default_cmd_invalid_parse() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
+        std::env::set_var("REALM_DEFAULT_CMD", "bash -c 'unclosed");
+        let result = resolve(RealmConfigInput {
+            name: "test".to_string(),
+            image: None,
+            mount_path: None,
+            project_dir: "/home/user/myproject".to_string(),
+            command: vec![],
+            env: vec![],
+            ssh: false,
+        });
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("REALM_DEFAULT_CMD"));
+        match saved {
+            Some(v) => std::env::set_var("REALM_DEFAULT_CMD", v),
+            None => std::env::remove_var("REALM_DEFAULT_CMD"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_env_default_cmd_unset() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
+        std::env::remove_var("REALM_DEFAULT_CMD");
+        let config = resolve(RealmConfigInput {
+            name: "test".to_string(),
+            image: None,
+            mount_path: None,
+            project_dir: "/home/user/myproject".to_string(),
+            command: vec![],
+            env: vec![],
+            ssh: false,
+        })
+        .unwrap();
+        assert_eq!(config.command, Vec::<String>::new());
+        if let Some(v) = saved {
+            std::env::set_var("REALM_DEFAULT_CMD", v);
+        }
     }
 }

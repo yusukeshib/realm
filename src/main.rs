@@ -159,7 +159,7 @@ fn cmd_create(
         command: cmd,
         env: vec![],
         ssh,
-    });
+    })?;
 
     let sess = session::Session::from(cfg);
     session::save(&sess)?;
