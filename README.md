@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/yusukeshib/realm/actions/workflows/ci.yml/badge.svg)](https://github.com/yusukeshib/realm/actions/workflows/ci.yml)
 
-Sandboxed Docker environments for git repos — safe playgrounds for AI coding agents.
+Safe, disposable dev environments for AI coding agents — powered by Docker and git.
 
 ![demo](./demo.gif)
 
@@ -19,6 +19,11 @@ AI coding agents (Claude Code, Cursor, Copilot) are powerful — but letting the
 - **Persistent sessions** — exit and resume where you left off, files are preserved
 - **Named sessions** — run multiple experiments in parallel
 - **Bring your own toolchain** — works with any Docker image
+
+## Requirements
+
+- [Docker](https://www.docker.com/) (or [OrbStack](https://orbstack.dev/) on macOS)
+- [Git](https://git-scm.com/)
 
 ## Install
 
@@ -53,7 +58,6 @@ Pre-built binaries are available on the [GitHub Releases](https://github.com/yus
 ## Quick Start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yusukeshib/realm/main/install.sh | bash
 realm my-feature --image ubuntu:latest -- bash
 # You're now in an isolated container with full git access
 ```
@@ -198,7 +202,8 @@ On first run, `git clone --local` creates an independent copy of your repo in th
 
 ## Design Decisions
 
-### Why `git clone --local`?
+<details>
+<summary><strong>Why <code>git clone --local</code>?</strong></summary>
 
 Several git isolation strategies exist — here's why the alternatives fall short:
 
@@ -209,7 +214,6 @@ Several git isolation strategies exist — here's why the alternatives fall shor
 | **Bare-git mount** | Still shares state; branch creates/deletes in the container affect the host |
 | **Branch-only isolation** | Nothing stops the agent from checking out other branches or running destructive git commands on shared refs |
 | **Full copy (`cp -r`)** | Truly isolated but slow for large repos |
-| **Docker sandbox (`--sandbox`)** | Opaque — no control over image, no persistence, no SSH forwarding, no custom Docker args (see [below](#why-plain-docker-not---sandbox)) |
 
 `git clone --local` wins because it's:
 
@@ -218,18 +222,22 @@ Several git isolation strategies exist — here's why the alternatives fall shor
 - **Complete** — full history, all branches, standard git repo
 - **Simple** — no wrapper scripts or special entrypoints needed
 
-### Why plain Docker (not `--sandbox`)?
+</details>
 
-Claude Code's built-in `--sandbox` mode wraps Docker, but trades flexibility for convenience:
+<details>
+<summary><strong>Why plain Docker?</strong></summary>
 
-- **Opaque** — you don't control the base image, installed packages, or container setup
-- **Not flexible** — can't bring your own toolchain, runtime, or dev environment
-- **No persistence** — no exit-and-resume; each run starts fresh
-- **No SSH forwarding** — git push/pull with SSH keys doesn't work out of the box
-- **No custom Docker args** — can't configure network, extra volumes, or env vars
-- **Single-agent** — tied to Claude Code; realm works with any agent or manual use
+Some tools (e.g. Claude Code's `--sandbox`) provide built-in Docker sandboxing. Realm takes a different approach — using plain Docker directly — which unlocks:
+
+- **Your own toolchain** — use any Docker image with the exact languages, runtimes, and tools you need
+- **Persistent sessions** — exit and resume where you left off; files and state are preserved
+- **SSH agent forwarding** — `git push` / `git pull` with your host SSH keys, out of the box
+- **Full Docker control** — custom network, volumes, env vars, and any other `docker run` flags
+- **Works with any agent** — not tied to a specific tool; use Claude Code, Cursor, Copilot, or manual workflows
 
 Plain Docker gives full control while realm handles the isolation and lifecycle.
+
+</details>
 
 ## SSH Agent Forwarding
 

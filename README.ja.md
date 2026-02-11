@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/yusukeshib/realm/actions/workflows/ci.yml/badge.svg)](https://github.com/yusukeshib/realm/actions/workflows/ci.yml)
 
-gitリポジトリ用のサンドボックスDocker環境 — AIコーディングエージェントのための安全な実験場。
+AIコーディングエージェントのための安全で使い捨て可能な開発環境 — DockerとGitで動作。
 
 ![demo](./demo.gif)
 
@@ -19,6 +19,11 @@ AIコーディングエージェント（Claude Code、Cursor、Copilot）は強
 - **永続的なセッション** — 終了しても再開時にそのまま続行、ファイルは保持されます
 - **名前付きセッション** — 複数の実験を並行して実行可能
 - **自分のツールチェーンを使用** — 任意のDockerイメージで動作
+
+## 必要なもの
+
+- [Docker](https://www.docker.com/)（macOSでは[OrbStack](https://orbstack.dev/)も可）
+- [Git](https://git-scm.com/)
 
 ## インストール
 
@@ -53,7 +58,6 @@ nix run github:yusukeshib/realm
 ## クイックスタート
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yusukeshib/realm/main/install.sh | bash
 realm my-feature --image ubuntu:latest -- bash
 # gitアクセス可能な隔離コンテナの中にいます
 ```
@@ -198,7 +202,8 @@ realm my-session --docker-args "-e DEBUG=1"
 
 ## 設計上の判断
 
-### なぜ `git clone --local`？
+<details>
+<summary><strong>なぜ <code>git clone --local</code>？</strong></summary>
 
 gitの隔離戦略はいくつか存在しますが、それぞれに問題があります：
 
@@ -209,7 +214,6 @@ gitの隔離戦略はいくつか存在しますが、それぞれに問題が�
 | **bare-gitマウント** | 状態を共有するため、コンテナ内でのブランチ作成・削除がホストに影響する |
 | **ブランチのみの隔離** | エージェントが他のブランチをチェックアウトしたり、共有refに対して破壊的なgitコマンドを実行することを防げない |
 | **完全コピー（`cp -r`）** | 完全に隔離されるが、大きなリポジトリでは遅い |
-| **Dockerサンドボックス（`--sandbox`）** | 不透明 — イメージの制御不可、永続性なし、SSH転送なし、カスタムDocker引数なし（[詳細は下記](#なぜ素のdocker--sandbox-ではなく)） |
 
 `git clone --local` が最適な理由：
 
@@ -218,18 +222,22 @@ gitの隔離戦略はいくつか存在しますが、それぞれに問題が�
 - **完全** — 全履歴、全ブランチを含む標準的なgitリポジトリ
 - **シンプル** — ラッパースクリプトや特別なentrypointは不要
 
-### なぜ素のDocker（`--sandbox` ではなく）？
+</details>
 
-Claude Codeの組み込み `--sandbox` モードはDockerをラップしますが、利便性と引き換えに柔軟性を犠牲にしています：
+<details>
+<summary><strong>なぜ素のDocker？</strong></summary>
 
-- **不透明** — ベースイメージ、インストール済みパッケージ、コンテナの設定を制御できない
-- **柔軟性がない** — 独自のツールチェーン、ランタイム、開発環境を持ち込めない
-- **永続性がない** — 終了して再開ができない。毎回ゼロからスタート
-- **SSH転送なし** — SSH鍵によるgit push/pullがそのままでは動作しない
-- **カスタムDocker引数なし** — ネットワーク、追加ボリューム、環境変数の設定ができない
-- **単一エージェント** — Claude Code専用。realmは任意のエージェントや手動操作で使用可能
+一部のツール（例: Claude Codeの `--sandbox`）はDockerサンドボックスを組み込みで提供しています。Realmは別のアプローチ — 素のDockerを直接使用 — を採ることで、以下を実現しています：
 
-素のDockerを使うことで完全な制御を維持しつつ、realmが隔離とライフサイクルを管理します。
+- **自分のツールチェーンを使用** — 必要な言語、ランタイム、ツールを含む任意のDockerイメージを使用可能
+- **永続的なセッション** — 終了しても再開可能、ファイルと状態が保持される
+- **SSHエージェント転送** — ホストのSSH鍵で `git push` / `git pull` がそのまま動作
+- **完全なDocker制御** — カスタムネットワーク、ボリューム、環境変数、その他の `docker run` フラグが使用可能
+- **任意のエージェントで動作** — 特定のツールに縛られず、Claude Code、Cursor、Copilot、手動操作で使用可能
+
+素のDockerを使うことで完全な制御を維持しつつ、Realmが隔離とライフサイクルを管理します。
+
+</details>
 
 ## SSHエージェント転送
 
