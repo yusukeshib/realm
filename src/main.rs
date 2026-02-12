@@ -220,7 +220,6 @@ fn cmd_create(
             }
             overlay::OverlayResult::Exited(code) => Ok(code),
             overlay::OverlayResult::Stopped => {
-                docker::remove_container(name);
                 eprintln!("Session '{}' stopped.", name);
                 Ok(0)
             }
@@ -340,7 +339,6 @@ fn cmd_resume(
                 }
                 overlay::OverlayResult::Exited(code) => Ok(code),
                 overlay::OverlayResult::Stopped => {
-                    docker::remove_container(name);
                     eprintln!("Session '{}' stopped.", name);
                     Ok(0)
                 }
@@ -360,7 +358,6 @@ fn run_overlay_attach(name: &str, title_color: Option<&str>) -> Result<i32> {
         }
         overlay::OverlayResult::Exited(code) => Ok(code),
         overlay::OverlayResult::Stopped => {
-            docker::remove_container(name);
             eprintln!("Session '{}' stopped.", name);
             Ok(0)
         }
@@ -378,7 +375,6 @@ fn run_overlay_start(name: &str, title_color: Option<&str>) -> Result<i32> {
         }
         overlay::OverlayResult::Exited(code) => Ok(code),
         overlay::OverlayResult::Stopped => {
-            docker::remove_container(name);
             eprintln!("Session '{}' stopped.", name);
             Ok(0)
         }
