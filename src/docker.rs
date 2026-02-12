@@ -338,7 +338,8 @@ pub fn start_container_with_pty(name: &str, slave_fd: RawFd) -> Result<Child> {
 
 pub fn attach_container_with_pty(name: &str, slave_fd: RawFd) -> Result<Child> {
     let child = Command::new("docker")
-        .args(["attach", &format!("realm-{}", name)])
+        // Disable Docker's own detach keys — our overlay handles Ctrl+P,Q
+        .args(["attach", "--detach-keys=", &format!("realm-{}", name)])
         .stdin(stdio_from_fd(slave_fd))
         .stdout(stdio_from_fd(slave_fd))
         .stderr(stdio_from_fd(slave_fd))

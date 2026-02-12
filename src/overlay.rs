@@ -62,7 +62,7 @@ pub fn run_with_overlay(
     if master_read_fd < 0 {
         anyhow::bail!("Failed to dup master fd");
     }
-    let reader_thread = std::thread::spawn(move || {
+    let _reader_thread = std::thread::spawn(move || {
         let mut file = unsafe { std::fs::File::from_raw_fd(master_read_fd) };
         let mut buf = [0u8; 4096];
         loop {
@@ -109,9 +109,11 @@ pub fn run_with_overlay(
         &mut app_cursor,
     );
 
-    // Clean up reader thread
+    // Close master fd so the reader thread's read() gets EIO.
+    // Don't join the reader thread — on macOS, read() on the dup'd master
+    // may not return immediately when the slave closes.  The thread will
+    // exit on its own (or be cleaned up at process exit, which is imminent).
     drop(pty.master);
-    let _ = reader_thread.join();
 
     result
 }
