@@ -109,6 +109,7 @@ realm                                               セッションマネージ�
 realm <name> [options] [-- cmd...]                  セッションの作成または再開
 realm <name> -d [-- cmd...]                         バックグラウンドで実行（デタッチ）
 realm <name>                                        実行中のセッションにアタッチ
+realm config zsh|bash                                シェル補完を出力
 realm upgrade                                       最新版にアップグレード
 ```
 
@@ -187,6 +188,20 @@ realm my-session
 # 特定のセッションで --docker-args で上書き
 realm my-session --docker-args "-e DEBUG=1"
 ```
+
+## シェル補完
+
+シェル設定ファイルに以下のいずれかを追加すると、セッション名やサブコマンドのタブ補完が有効になります：
+
+```bash
+# Zsh (~/.zshrc)
+eval "$(realm config zsh)"
+
+# Bash (~/.bashrc)
+eval "$(realm config bash)"
+```
+
+シェルを再読み込みすると、`realm [tab]` で利用可能なセッションとサブコマンドが表示されます。
 
 ## 仕組み
 

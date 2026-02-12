@@ -109,6 +109,7 @@ realm                                               Session manager (TUI)
 realm <name> [options] [-- cmd...]                  Create or resume a session
 realm <name> -d [-- cmd...]                         Run detached (background)
 realm <name>                                        Attach to running session
+realm config zsh|bash                                Output shell completions
 realm upgrade                                       Upgrade to latest version
 ```
 
@@ -187,6 +188,20 @@ realm my-session
 # Override with --docker-args for a specific session
 realm my-session --docker-args "-e DEBUG=1"
 ```
+
+## Shell Completions
+
+Add one of these to your shell config to enable tab completion for session names and subcommands:
+
+```bash
+# Zsh (~/.zshrc)
+eval "$(realm config zsh)"
+
+# Bash (~/.bashrc)
+eval "$(realm config bash)"
+```
+
+After reloading your shell, `realm [tab]` will show available sessions and subcommands.
 
 ## How It Works
 
