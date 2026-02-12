@@ -14,6 +14,7 @@ pub struct Session {
     pub command: Vec<String>,
     pub env: Vec<String>,
     pub ssh: bool,
+    pub color: Option<String>,
 }
 
 impl From<config::RealmConfig> for Session {
@@ -26,6 +27,7 @@ impl From<config::RealmConfig> for Session {
             command: cfg.command,
             env: cfg.env,
             ssh: cfg.ssh,
+            color: None,
         }
     }
 }
@@ -101,6 +103,11 @@ pub fn save(session: &Session) -> Result<()> {
     } else {
         let _ = fs::remove_file(dir.join("ssh"));
     }
+    if let Some(ref color) = session.color {
+        fs::write(dir.join("color"), color)?;
+    } else {
+        let _ = fs::remove_file(dir.join("color"));
+    }
 
     Ok(())
 }
@@ -144,6 +151,10 @@ pub fn load(name: &str) -> Result<Session> {
         .unwrap_or_default();
 
     let ssh = dir.join("ssh").exists();
+    let color = fs::read_to_string(dir.join("color"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
     Ok(Session {
         name: name.to_string(),
@@ -153,6 +164,7 @@ pub fn load(name: &str) -> Result<Session> {
         command,
         env,
         ssh,
+        color,
     })
 }
 
@@ -291,6 +303,7 @@ mod tests {
                 command: vec![],
                 env: vec![],
                 ssh: false,
+                color: None,
             };
             save(&sess).unwrap();
 
@@ -318,6 +331,7 @@ mod tests {
                 ],
                 env: vec![],
                 ssh: false,
+                color: None,
             };
             save(&sess).unwrap();
 
@@ -337,6 +351,7 @@ mod tests {
                 command: vec![],
                 env: vec![],
                 ssh: false,
+                color: None,
             };
             save(&sess).unwrap();
 
@@ -401,6 +416,7 @@ mod tests {
                 command: vec![],
                 env: vec![],
                 ssh: false,
+                color: None,
             };
             save(&sess).unwrap();
             assert!(session_exists("exists-test").unwrap());
@@ -427,6 +443,7 @@ mod tests {
                     command: vec![],
                     env: vec![],
                     ssh: false,
+                    color: None,
                 };
                 save(&sess).unwrap();
             }
@@ -451,6 +468,7 @@ mod tests {
                 command: vec![],
                 env: vec![],
                 ssh: false,
+                color: None,
             };
             save(&sess).unwrap();
 
@@ -473,6 +491,7 @@ mod tests {
                 command: vec![],
                 env: vec![],
                 ssh: false,
+                color: None,
             };
             save(&sess).unwrap();
             assert!(session_exists("to-remove").unwrap());
@@ -501,6 +520,7 @@ mod tests {
                 command: vec![],
                 env: vec![],
                 ssh: false,
+                color: None,
             };
             save(&sess).unwrap();
 
@@ -539,6 +559,7 @@ mod tests {
                 command: vec!["bash".to_string(), "-c".to_string(), "echo hi".to_string()],
                 env: vec![],
                 ssh: false,
+                color: None,
             };
             save(&sess).unwrap();
 
@@ -559,6 +580,7 @@ mod tests {
                 command: vec![],
                 env: vec!["FOO=bar".to_string(), "BAZ".to_string()],
                 ssh: false,
+                color: None,
             };
             save(&sess).unwrap();
 
@@ -582,6 +604,7 @@ mod tests {
                 command: vec![],
                 env: vec![],
                 ssh: false,
+                color: None,
             };
             save(&sess).unwrap();
 

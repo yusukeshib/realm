@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
+use std::os::unix::io::RawFd;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 
 use crate::config;
 
@@ -239,6 +240,121 @@ pub fn run_container(cfg: &DockerRunConfig) -> Result<i32> {
     }
 }
 
+/// Build run args for PTY mode: uses `-it` but stdin/stdout/stderr come from the PTY fd.
+pub fn build_run_args_pty(cfg: &DockerRunConfig) -> Result<Vec<String>> {
+    let workspace_dir = Path::new(cfg.home)
+        .join(".realm")
+        .join("workspaces")
+        .join(cfg.name);
+    let workspace_dir = workspace_dir.to_string_lossy();
+    let mut args: Vec<String> = vec![
+        "run".into(),
+        "-it".into(),
+        "--name".into(),
+        format!("realm-{}", cfg.name),
+        "--hostname".into(),
+        format!("realm-{}", cfg.name),
+        "-v".into(),
+        format!("{}:{}", workspace_dir, cfg.mount_path),
+        "-w".into(),
+        cfg.mount_path.into(),
+    ];
+
+    let gitconfig = Path::new(cfg.home).join(".gitconfig");
+    if gitconfig.exists() {
+        args.push("-v".into());
+        args.push(format!("{}:/etc/gitconfig:ro", gitconfig.display()));
+    }
+
+    if cfg.ssh {
+        let (host_path, container_path) = ssh_agent_paths()?;
+        args.push("-v".into());
+        args.push(format!("{}:{}", host_path, container_path));
+        args.push("-e".into());
+        args.push(format!("SSH_AUTH_SOCK={}", container_path));
+    }
+
+    if let Some(extra) = cfg.docker_args {
+        if !extra.is_empty() {
+            match shell_words::split(extra) {
+                Ok(extra_args) => args.extend(extra_args),
+                Err(e) => {
+                    bail!("Failed to parse docker args: {}", e);
+                }
+            }
+        }
+    }
+
+    for entry in cfg.env {
+        args.push("-e".into());
+        args.push(entry.clone());
+    }
+
+    args.push(cfg.image.into());
+
+    if !cfg.cmd.is_empty() {
+        args.extend(cfg.cmd.iter().cloned());
+    }
+
+    Ok(args)
+}
+
+fn stdio_from_fd(fd: RawFd) -> Stdio {
+    use std::os::unix::io::FromRawFd;
+    let duped = unsafe { nix::libc::dup(fd) };
+    assert!(duped >= 0, "dup fd failed");
+    unsafe { Stdio::from_raw_fd(duped) }
+}
+
+pub fn run_container_with_pty(cfg: &DockerRunConfig, slave_fd: RawFd) -> Result<Child> {
+    ensure_workspace(cfg.home, cfg.name, cfg.project_dir)?;
+
+    if cfg.ssh && std::cfg!(target_os = "macos") {
+        fix_ssh_socket_permissions(cfg.image);
+    }
+
+    let args = build_run_args_pty(cfg)?;
+
+    let child = Command::new("docker")
+        .args(&args)
+        .stdin(stdio_from_fd(slave_fd))
+        .stdout(stdio_from_fd(slave_fd))
+        .stderr(stdio_from_fd(slave_fd))
+        .spawn()?;
+
+    Ok(child)
+}
+
+pub fn start_container_with_pty(name: &str, slave_fd: RawFd) -> Result<Child> {
+    let child = Command::new("docker")
+        .args(["start", "-ai", &format!("realm-{}", name)])
+        .stdin(stdio_from_fd(slave_fd))
+        .stdout(stdio_from_fd(slave_fd))
+        .stderr(stdio_from_fd(slave_fd))
+        .spawn()?;
+
+    Ok(child)
+}
+
+pub fn attach_container_with_pty(name: &str, slave_fd: RawFd) -> Result<Child> {
+    let child = Command::new("docker")
+        .args(["attach", &format!("realm-{}", name)])
+        .stdin(stdio_from_fd(slave_fd))
+        .stdout(stdio_from_fd(slave_fd))
+        .stderr(stdio_from_fd(slave_fd))
+        .spawn()?;
+
+    Ok(child)
+}
+
+pub fn stop_container(name: &str) {
+    let _ = Command::new("docker")
+        .args(["stop", "-t", "5", &format!("realm-{}", name)])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
 pub fn container_exists(name: &str) -> bool {
     Command::new("docker")
         .args(["container", "inspect", &format!("realm-{}", name)])
@@ -282,6 +398,7 @@ pub fn running_sessions() -> std::collections::HashSet<String> {
     }
 }
 
+#[allow(dead_code)]
 pub fn start_container(name: &str) -> Result<i32> {
     let status = Command::new("docker")
         .args(["start", "-ai", &format!("realm-{}", name)])
@@ -293,6 +410,7 @@ pub fn start_container(name: &str) -> Result<i32> {
     Ok(status.code().unwrap_or(1))
 }
 
+#[allow(dead_code)]
 pub fn attach_container(name: &str) -> Result<i32> {
     let status = Command::new("docker")
         .args(["attach", &format!("realm-{}", name)])

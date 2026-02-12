@@ -1,6 +1,6 @@
 [package]
 name = "realm-cli"
-version = "0.0.29"
+version = "0.0.30"
 edition = "2021"
 description = "Sandboxed Docker environments for git repos"
 license = "MIT"
@@ -18,6 +18,8 @@ shell-words = "1"
 ratatui = "0.29"
 crossterm = "0.28"
 self_update = { version = "0.42", default-features = false, features = ["rustls"] }
+vt100 = "0.15"
+nix = { version = "0.29", features = ["term", "ioctl", "signal"] }
 
 [dev-dependencies]
 tempfile = "3"

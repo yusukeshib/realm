@@ -1,6 +1,7 @@
 mod config;
 mod docker;
 mod git;
+mod overlay;
 mod session;
 mod tui;
 
@@ -47,6 +48,10 @@ struct SessionArgs {
     #[arg(long = "no-ssh")]
     no_ssh: bool,
 
+    /// Title bar color (e.g. "blue", "green", "red", "#ff0000")
+    #[arg(long)]
+    color: Option<String>,
+
     /// Command to run in container
     #[arg(last = true)]
     cmd: Vec<String>,
@@ -89,6 +94,7 @@ fn main() {
                     session.cmd,
                     !session.no_ssh,
                     session.detach,
+                    session.color,
                 ),
             }
         }
@@ -122,12 +128,12 @@ fn cmd_list() -> Result<i32> {
     let docker_args = std::env::var("REALM_DOCKER_ARGS").unwrap_or_default();
 
     match tui::session_manager(&sessions, delete_fn)? {
-        tui::TuiAction::Resume(name) => cmd_resume(&name, &docker_args, vec![], true, false),
+        tui::TuiAction::Resume(name) => cmd_resume(&name, &docker_args, vec![], true, false, None),
         tui::TuiAction::New {
             name,
             image,
             command,
-        } => cmd_create(&name, image, &docker_args, command, true, false),
+        } => cmd_create(&name, image, &docker_args, command, true, false, None),
         tui::TuiAction::Quit => Ok(0),
     }
 }
@@ -139,6 +145,7 @@ fn cmd_create(
     cmd: Vec<String>,
     ssh: bool,
     detach: bool,
+    color: Option<String>,
 ) -> Result<i32> {
     session::validate_name(name)?;
 
@@ -163,7 +170,8 @@ fn cmd_create(
         ssh,
     })?;
 
-    let sess = session::Session::from(cfg);
+    let mut sess = session::Session::from(cfg);
+    sess.color = color;
     session::save(&sess)?;
 
     let home = config::home_dir()?;
@@ -174,18 +182,50 @@ fn cmd_create(
     };
 
     docker::remove_container(name);
-    docker::run_container(&docker::DockerRunConfig {
-        name,
-        project_dir: &sess.project_dir,
-        image: &sess.image,
-        mount_path: &sess.mount_path,
-        cmd: &sess.command,
-        env: &sess.env,
-        home: &home,
-        docker_args: docker_args_opt,
-        ssh: sess.ssh,
-        detach,
-    })
+
+    if detach {
+        docker::run_container(&docker::DockerRunConfig {
+            name,
+            project_dir: &sess.project_dir,
+            image: &sess.image,
+            mount_path: &sess.mount_path,
+            cmd: &sess.command,
+            env: &sess.env,
+            home: &home,
+            docker_args: docker_args_opt,
+            ssh: sess.ssh,
+            detach: true,
+        })
+    } else {
+        let title_color = sess.color.clone();
+        let cfg = docker::DockerRunConfig {
+            name,
+            project_dir: &sess.project_dir,
+            image: &sess.image,
+            mount_path: &sess.mount_path,
+            cmd: &sess.command,
+            env: &sess.env,
+            home: &home,
+            docker_args: docker_args_opt,
+            ssh: sess.ssh,
+            detach: false,
+        };
+        match overlay::run_with_overlay(name, title_color.as_deref(), |slave_fd| {
+            docker::run_container_with_pty(&cfg, slave_fd)
+        })? {
+            overlay::OverlayResult::Detached => {
+                eprintln!("Detached from session '{}'. Container still running.", name);
+                eprintln!("Run `realm {}` to re-attach.", name);
+                Ok(0)
+            }
+            overlay::OverlayResult::Exited(code) => Ok(code),
+            overlay::OverlayResult::Stopped => {
+                docker::remove_container(name);
+                eprintln!("Session '{}' stopped.", name);
+                Ok(0)
+            }
+        }
+    }
 }
 
 fn cmd_create_or_resume(
@@ -195,15 +235,16 @@ fn cmd_create_or_resume(
     cmd: Vec<String>,
     ssh: bool,
     detach: bool,
+    color: Option<String>,
 ) -> Result<i32> {
     // Check if session exists
     if session::session_exists(name)? {
         // Session exists - resume it
-        return cmd_resume(name, &docker_args, cmd, ssh, detach);
+        return cmd_resume(name, &docker_args, cmd, ssh, detach, color);
     }
 
     // Session doesn't exist - create it
-    cmd_create(name, image, &docker_args, cmd, ssh, detach)
+    cmd_create(name, image, &docker_args, cmd, ssh, detach, color)
 }
 
 fn cmd_resume(
@@ -212,6 +253,7 @@ fn cmd_resume(
     cmd: Vec<String>,
     ssh: bool,
     detach: bool,
+    color: Option<String>,
 ) -> Result<i32> {
     session::validate_name(name)?;
 
@@ -226,6 +268,8 @@ fn cmd_resume(
     }
 
     let sess = session::load(name)?;
+    // Use CLI --color if provided, otherwise fall back to saved session color
+    let title_color = color.or(sess.color.clone());
 
     if !Path::new(&sess.project_dir).is_dir() {
         bail!("Project directory '{}' no longer exists.", sess.project_dir);
@@ -238,17 +282,17 @@ fn cmd_resume(
             println!("Session '{}' is already running.", name);
             return Ok(0);
         }
-        return docker::attach_container(name);
+        return run_overlay_attach(name, title_color.as_deref());
     }
 
-    println!("Resuming session '{}'...", name);
+    eprintln!("Resuming session '{}'...", name);
     session::touch_resumed_at(name)?;
 
     if docker::container_exists(name) {
         if detach {
             docker::start_container_detached(name)
         } else {
-            docker::start_container(name)
+            run_overlay_start(name, title_color.as_deref())
         }
     } else {
         let home = config::home_dir()?;
@@ -259,18 +303,85 @@ fn cmd_resume(
         };
 
         docker::remove_container(name);
-        docker::run_container(&docker::DockerRunConfig {
-            name,
-            project_dir: &sess.project_dir,
-            image: &sess.image,
-            mount_path: &sess.mount_path,
-            cmd: &sess.command,
-            env: &sess.env,
-            home: &home,
-            docker_args: docker_args_opt,
-            ssh,
-            detach,
-        })
+
+        if detach {
+            docker::run_container(&docker::DockerRunConfig {
+                name,
+                project_dir: &sess.project_dir,
+                image: &sess.image,
+                mount_path: &sess.mount_path,
+                cmd: &sess.command,
+                env: &sess.env,
+                home: &home,
+                docker_args: docker_args_opt,
+                ssh,
+                detach: true,
+            })
+        } else {
+            let cfg = docker::DockerRunConfig {
+                name,
+                project_dir: &sess.project_dir,
+                image: &sess.image,
+                mount_path: &sess.mount_path,
+                cmd: &sess.command,
+                env: &sess.env,
+                home: &home,
+                docker_args: docker_args_opt,
+                ssh,
+                detach: false,
+            };
+            match overlay::run_with_overlay(name, title_color.as_deref(), |slave_fd| {
+                docker::run_container_with_pty(&cfg, slave_fd)
+            })? {
+                overlay::OverlayResult::Detached => {
+                    eprintln!("Detached from session '{}'. Container still running.", name);
+                    eprintln!("Run `realm {}` to re-attach.", name);
+                    Ok(0)
+                }
+                overlay::OverlayResult::Exited(code) => Ok(code),
+                overlay::OverlayResult::Stopped => {
+                    docker::remove_container(name);
+                    eprintln!("Session '{}' stopped.", name);
+                    Ok(0)
+                }
+            }
+        }
+    }
+}
+
+fn run_overlay_attach(name: &str, title_color: Option<&str>) -> Result<i32> {
+    match overlay::run_with_overlay(name, title_color, |slave_fd| {
+        docker::attach_container_with_pty(name, slave_fd)
+    })? {
+        overlay::OverlayResult::Detached => {
+            eprintln!("Detached from session '{}'. Container still running.", name);
+            eprintln!("Run `realm {}` to re-attach.", name);
+            Ok(0)
+        }
+        overlay::OverlayResult::Exited(code) => Ok(code),
+        overlay::OverlayResult::Stopped => {
+            docker::remove_container(name);
+            eprintln!("Session '{}' stopped.", name);
+            Ok(0)
+        }
+    }
+}
+
+fn run_overlay_start(name: &str, title_color: Option<&str>) -> Result<i32> {
+    match overlay::run_with_overlay(name, title_color, |slave_fd| {
+        docker::start_container_with_pty(name, slave_fd)
+    })? {
+        overlay::OverlayResult::Detached => {
+            eprintln!("Detached from session '{}'. Container still running.", name);
+            eprintln!("Run `realm {}` to re-attach.", name);
+            Ok(0)
+        }
+        overlay::OverlayResult::Exited(code) => Ok(code),
+        overlay::OverlayResult::Stopped => {
+            docker::remove_container(name);
+            eprintln!("Session '{}' stopped.", name);
+            Ok(0)
+        }
     }
 }
 
@@ -566,7 +677,7 @@ mod tests {
 
     #[test]
     fn test_resume_rejects_command() {
-        let result = cmd_resume("test-session", "", vec!["bash".into()], true, false);
+        let result = cmd_resume("test-session", "", vec!["bash".into()], true, false, None);
         let err = result.unwrap_err();
         assert!(
             err.to_string()
