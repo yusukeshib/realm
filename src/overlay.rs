@@ -88,7 +88,7 @@ pub fn run_with_overlay(
     write!(stdout, "\x1b[2J\x1b[H\x1b[1;{}r", content_rows)?;
     stdout.flush()?;
 
-    let _guard = TerminalGuard { content_rows };
+    let _guard = TerminalGuard;
 
     let mut app_cursor = false;
     let mut mouse_mode = false;
@@ -537,9 +537,7 @@ fn set_pty_size(master_fd: RawFd, rows: u16, cols: u16) {
 ///
 /// Restores: scroll region, raw mode, mouse capture.
 /// Does NOT leave alternate screen (we never entered it).
-struct TerminalGuard {
-    content_rows: u16,
-}
+struct TerminalGuard;
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
@@ -548,8 +546,10 @@ impl Drop for TerminalGuard {
         let _ = execute!(stdout, DisableMouseCapture);
         // Reset scroll region to full terminal
         let _ = write!(stdout, "\x1b[r");
-        // Move cursor below where the status bar was so the shell prompt appears cleanly
-        let _ = writeln!(stdout, "\x1b[{};1H", self.content_rows + 1);
+        // Move to the actual bottom row, clear the status bar remnant, then newline
+        // so the shell prompt starts on a clean line.
+        // Use 999 to reliably reach the bottom regardless of current terminal size.
+        let _ = writeln!(stdout, "\x1b[999;1H\x1b[2K");
         let _ = stdout.flush();
     }
 }
