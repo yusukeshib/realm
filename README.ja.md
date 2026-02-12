@@ -87,6 +87,7 @@ docker build -t mydev .
 ```bash
 export REALM_DEFAULT_IMAGE=mydev              # カスタムイメージ
 export REALM_DOCKER_ARGS="--network host"     # 常に使いたいDockerフラグ
+export REALM_DEFAULT_CMD="bash"               # 新規セッションのデフォルトコマンド
 ```
 
 **4. 完了 — あとは realm を使うだけ**
@@ -176,6 +177,7 @@ CLIフラグを完全に省略するためのデフォルト設定です。`.zsh
 |----------|-------------|
 | `REALM_DEFAULT_IMAGE` | 新規セッションのデフォルトDockerイメージ（デフォルト: `alpine:latest`） |
 | `REALM_DOCKER_ARGS` | デフォルトの追加Dockerフラグ。`--docker-args` が指定されていない場合に使用 |
+| `REALM_DEFAULT_CMD` | 新規セッションのデフォルトコマンド。`-- cmd` が指定されていない場合に使用 |
 
 ```bash
 # 全セッションにデフォルトのDockerフラグを設定

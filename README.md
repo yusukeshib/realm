@@ -87,6 +87,7 @@ Add these to your `.zshrc` or `.bashrc`:
 ```bash
 export REALM_DEFAULT_IMAGE=mydev              # your custom image
 export REALM_DOCKER_ARGS="--network host"     # any extra Docker flags you always want
+export REALM_DEFAULT_CMD="bash"               # default command for new sessions
 ```
 
 **4. Done — just use realm**
@@ -176,6 +177,7 @@ These let you configure defaults so you can skip CLI flags entirely. Set them in
 |----------|-------------|
 | `REALM_DEFAULT_IMAGE` | Default Docker image for new sessions (default: `alpine:latest`) |
 | `REALM_DOCKER_ARGS` | Default extra Docker flags, used when `--docker-args` is not provided |
+| `REALM_DEFAULT_CMD` | Default command for new sessions, used when no `-- cmd` is provided |
 
 ```bash
 # Set default Docker flags for all sessions

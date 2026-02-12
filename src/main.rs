@@ -47,7 +47,7 @@ struct SessionArgs {
     #[arg(long = "no-ssh")]
     no_ssh: bool,
 
-    /// Command to run in container
+    /// Command to run in container (default: $REALM_DEFAULT_CMD if set)
     #[arg(last = true)]
     cmd: Vec<String>,
 }
