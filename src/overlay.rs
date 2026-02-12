@@ -246,14 +246,30 @@ fn run_event_loop(
                         write_to_pty(master_fd, seq.as_bytes());
                     }
                 }
-                Event::Resize(cols, rows) => {
+                Event::Resize(mut cols, mut rows) => {
+                    // Drain queued resize events so we only act on the final size
+                    while event::poll(Duration::ZERO)? {
+                        match event::read()? {
+                            Event::Resize(c, r) => {
+                                cols = c;
+                                rows = r;
+                            }
+                            _ => break,
+                        }
+                    }
                     if rows > 1 {
                         let content_rows = rows - 1;
-                        set_pty_size(master_fd, content_rows, cols);
+                        // Update scroll region and redraw status bar — don't clear the
+                        // screen so the old content stays visible until the inner app
+                        // repaints (avoids blank flash).
                         stdout.write_all(b"\x1b[?2026h")?;
+                        write!(stdout, "\x1b[1;{}r", content_rows)?;
                         draw_status_bar(stdout, rows, cols, session_name, fg_color, bg_color, *cursor_visible)?;
                         stdout.write_all(b"\x1b[?2026l")?;
                         stdout.flush()?;
+                        // Nudge inner app to redraw by toggling PTY size
+                        set_pty_size(master_fd, content_rows.saturating_sub(1).max(1), cols);
+                        set_pty_size(master_fd, content_rows, cols);
                     }
                 }
                 _ => {}
