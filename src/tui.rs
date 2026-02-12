@@ -393,7 +393,15 @@ where
                         let command = if cmd_text.is_empty() {
                             vec![]
                         } else {
-                            shell_words::split(&cmd_text)?
+                            match shell_words::split(&cmd_text) {
+                                Ok(args) => args,
+                                Err(e) => {
+                                    footer_msg = format!("Invalid command: {e}");
+                                    mode = Mode::Normal;
+                                    input = TextInput::new();
+                                    continue;
+                                }
+                            }
                         };
                         clear_viewport(&mut terminal, viewport_height)?;
                         return Ok(TuiAction::New {
