@@ -12,7 +12,11 @@ use crate::session::{self, SessionSummary};
 
 pub enum TuiAction {
     Resume(String),
-    New { name: String, image: Option<String> },
+    New {
+        name: String,
+        image: Option<String>,
+        command: Vec<String>,
+    },
     Quit,
 }
 
@@ -22,6 +26,7 @@ enum Mode {
     DeleteConfirm,
     InputName,
     InputImage,
+    InputCommand,
 }
 
 struct TextInput {
@@ -159,6 +164,7 @@ where
     let mut input = TextInput::new();
     let mut footer_msg = String::new();
     let mut new_name = String::new();
+    let mut new_image: Option<String> = None;
 
     loop {
         terminal.draw(|f| {
@@ -248,6 +254,7 @@ where
                 }
                 Mode::InputName => Line::from(input.to_spans("Session name: ")),
                 Mode::InputImage => Line::from(input.to_spans("Image: ")),
+                Mode::InputCommand => Line::from(input.to_spans("Command (optional): ")),
             };
             f.render_widget(footer_line, footer_area);
         })?;
@@ -364,15 +371,35 @@ where
                 Mode::InputImage => match key.code {
                     KeyCode::Enter => {
                         let image_text = input.text.trim().to_string();
-                        let image = if image_text.is_empty() {
+                        new_image = if image_text.is_empty() {
                             None
                         } else {
                             Some(image_text)
                         };
+                        let default_cmd = std::env::var("REALM_DEFAULT_CMD").unwrap_or_default();
+                        input = TextInput::with_text(default_cmd);
+                        mode = Mode::InputCommand;
+                    }
+                    KeyCode::Esc => {
+                        mode = Mode::Normal;
+                    }
+                    _ => {
+                        input.handle_key(key.code);
+                    }
+                },
+                Mode::InputCommand => match key.code {
+                    KeyCode::Enter => {
+                        let cmd_text = input.text.trim().to_string();
+                        let command = if cmd_text.is_empty() {
+                            vec![]
+                        } else {
+                            shell_words::split(&cmd_text)?
+                        };
                         clear_viewport(&mut terminal, viewport_height)?;
                         return Ok(TuiAction::New {
                             name: new_name,
-                            image,
+                            image: new_image,
+                            command,
                         });
                     }
                     KeyCode::Esc => {

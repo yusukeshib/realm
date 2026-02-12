@@ -123,9 +123,11 @@ fn cmd_list() -> Result<i32> {
 
     match tui::session_manager(&sessions, delete_fn)? {
         tui::TuiAction::Resume(name) => cmd_resume(&name, &docker_args, vec![], true, false),
-        tui::TuiAction::New { name, image } => {
-            cmd_create(&name, image, &docker_args, vec![], true, false)
-        }
+        tui::TuiAction::New {
+            name,
+            image,
+            command,
+        } => cmd_create(&name, image, &docker_args, command, true, false),
         tui::TuiAction::Quit => Ok(0),
     }
 }
