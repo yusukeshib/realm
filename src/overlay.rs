@@ -128,6 +128,7 @@ fn run_event_loop(
     mouse_mode: &mut bool,
     app_cursor: &mut bool,
 ) -> Result<OverlayResult> {
+    let mut reader_done = false;
     loop {
         // Drain PTY output — forward raw bytes to stdout
         let mut got_output = false;
@@ -140,19 +141,27 @@ fn run_event_loop(
                     got_output = true;
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    reader_done = true;
+                    break;
+                }
             }
         }
 
-        // After forwarding output, re-assert scroll region and redraw status bar
+        // After forwarding output, redraw status bar (includes scroll region re-assertion)
         if got_output {
             let (cols, rows) = terminal::size().unwrap_or((80, 24));
-            let content_rows = rows.saturating_sub(1).max(1);
-            write!(stdout, "\x1b[1;{}r", content_rows)?;
             draw_status_bar(stdout, rows, cols, session_name, fg_color)?;
         }
 
         // Check if child exited
+        if reader_done {
+            // Reader thread exited — PTY slave is closed, child is exiting.
+            // Use blocking wait to avoid spinning.
+            let status = child.wait()?;
+            stdout.flush()?;
+            return Ok(OverlayResult::Exited(status.code().unwrap_or(1)));
+        }
         match child.try_wait() {
             Ok(Some(status)) => {
                 // Drain remaining output
@@ -219,7 +228,6 @@ fn run_event_loop(
                     if rows > 1 {
                         let content_rows = rows - 1;
                         set_pty_size(master_fd, content_rows, cols);
-                        write!(stdout, "\x1b[1;{}r", content_rows)?;
                         draw_status_bar(stdout, rows, cols, session_name, fg_color)?;
                     }
                 }
@@ -231,7 +239,12 @@ fn run_event_loop(
 
 /// Draw the status bar on the bottom row using raw ANSI escapes.
 ///
-/// Sequence: save cursor → move to bottom row → draw bar → re-assert scroll region → restore cursor
+/// Sequence: save cursor → move to bottom row → draw styled text →
+/// re-assert scroll region → restore cursor.
+///
+/// The scroll region command (`\e[1;Nr`) is included here because it resets
+/// the cursor to home (1,1) as a side effect.  By issuing it between
+/// save (`\e7`) and restore (`\e8`), the cursor position is preserved.
 fn draw_status_bar(
     stdout: &mut io::Stdout,
     rows: u16,
@@ -239,6 +252,7 @@ fn draw_status_bar(
     session_name: &str,
     fg_color: &str,
 ) -> Result<()> {
+    let content_rows = rows.saturating_sub(1).max(1);
     let width = cols as usize;
     let right = " ctrl+p,q:detach | ctrl+p,x:stop ";
     let right_len = right.len();
@@ -253,20 +267,22 @@ fn draw_status_bar(
     let left_len = left.len();
     let pad = width.saturating_sub(left_len + right_len);
 
-    // \x1b7          = save cursor
-    // \x1b[{rows};1H = move to bottom row
-    // \x1b[{fg};1;100m = bold + fg color + dark gray bg (SGR 100 = bright black bg)
-    // ... content ...
-    // \x1b[0m        = reset attributes
-    // \x1b8          = restore cursor
+    // \x1b7              = save cursor position
+    // \x1b[{rows};1H     = move to bottom row (status bar)
+    // \x1b[{fg};1;100m   = bold + fg color + dark gray bg
+    // ... bar content ...
+    // \x1b[0m             = reset SGR attributes
+    // \x1b[1;{N}r         = re-assert scroll region (resets cursor to 1,1)
+    // \x1b8               = restore cursor to saved position
     write!(
         stdout,
-        "\x1b7\x1b[{};1H\x1b[{}1;100m{}{}{}\x1b[0m\x1b8",
+        "\x1b7\x1b[{};1H\x1b[{}1;100m{}{}{}\x1b[0m\x1b[1;{}r\x1b8",
         rows,
         fg_color,
         left,
         " ".repeat(pad),
         right,
+        content_rows,
     )?;
     stdout.flush()?;
     Ok(())
@@ -276,11 +292,6 @@ fn draw_status_bar(
 ///
 /// Scans for DECCKM set/reset: `\e[?1h` (enable) / `\e[?1l` (disable).
 fn detect_app_cursor_mode(data: &[u8], app_cursor: &mut bool) {
-    // Look for \x1b[?1h and \x1b[?1l in the byte stream
-    if data.len() < 5 {
-        // Can't contain the sequence if shorter than 5 bytes, but check windows anyway
-        // Actually the sequence is exactly 5 bytes: ESC [ ? 1 h/l
-    }
     for window in data.windows(5) {
         if window == b"\x1b[?1h" {
             *app_cursor = true;
