@@ -131,16 +131,16 @@ fn run_event_loop(
     app_cursor: &mut bool,
 ) -> Result<OverlayResult> {
     let mut reader_done = false;
+    let mut buf = Vec::with_capacity(8192);
     loop {
-        // Drain PTY output — forward raw bytes to stdout
-        let mut got_output = false;
+        // Drain PTY output into a buffer
+        buf.clear();
         loop {
             match rx.try_recv() {
                 Ok(data) => {
                     detect_mouse_mode(&data, mouse_mode);
                     detect_app_cursor_mode(&data, app_cursor);
-                    stdout.write_all(&data)?;
-                    got_output = true;
+                    buf.extend_from_slice(&data);
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -150,10 +150,16 @@ fn run_event_loop(
             }
         }
 
-        // After forwarding output, redraw status bar (includes scroll region re-assertion)
-        if got_output {
+        // Write buffered output + status bar as a single synchronized frame
+        if !buf.is_empty() {
             let (cols, rows) = terminal::size().unwrap_or((80, 24));
+            // Begin synchronized update (terminals that don't support it ignore this)
+            stdout.write_all(b"\x1b[?2026h")?;
+            stdout.write_all(&buf)?;
             draw_status_bar(stdout, rows, cols, session_name, fg_color)?;
+            // End synchronized update — terminal renders the whole frame at once
+            stdout.write_all(b"\x1b[?2026l")?;
+            stdout.flush()?;
         }
 
         // Check if child exited
@@ -230,7 +236,10 @@ fn run_event_loop(
                     if rows > 1 {
                         let content_rows = rows - 1;
                         set_pty_size(master_fd, content_rows, cols);
+                        stdout.write_all(b"\x1b[?2026h")?;
                         draw_status_bar(stdout, rows, cols, session_name, fg_color)?;
+                        stdout.write_all(b"\x1b[?2026l")?;
+                        stdout.flush()?;
                     }
                 }
                 _ => {}
@@ -271,6 +280,7 @@ fn draw_status_bar(
 
     // \x1b7              = save cursor position
     // \x1b[{rows};1H     = move to bottom row (status bar)
+    // \x1b[2K             = clear entire line (removes stale content after resize)
     // \x1b[{fg};1;100m   = bold + fg color + dark gray bg
     // ... bar content ...
     // \x1b[0m             = reset SGR attributes
@@ -278,7 +288,7 @@ fn draw_status_bar(
     // \x1b8               = restore cursor to saved position
     write!(
         stdout,
-        "\x1b7\x1b[{};1H\x1b[{}1;100m{}{}{}\x1b[0m\x1b[1;{}r\x1b8",
+        "\x1b7\x1b[{};1H\x1b[2K\x1b[{}1;100m{}{}{}\x1b[0m\x1b[1;{}r\x1b8",
         rows,
         fg_color,
         left,
@@ -286,7 +296,6 @@ fn draw_status_bar(
         right,
         content_rows,
     )?;
-    stdout.flush()?;
     Ok(())
 }
 
