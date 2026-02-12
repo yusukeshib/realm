@@ -30,7 +30,7 @@ pub fn run_with_overlay(
     title_color: Option<&str>,
     spawn_docker: impl FnOnce(RawFd) -> Result<Child>,
 ) -> Result<OverlayResult> {
-    let fg_color = parse_color_ansi(title_color);
+    let (fg_color, bg_color) = parse_status_colors(title_color);
 
     let (term_cols, term_rows) = terminal::size().context("Failed to get terminal size")?;
     if term_rows < 3 || term_cols < 20 {
@@ -96,7 +96,7 @@ pub fn run_with_overlay(
     let mut ctrl_p_pressed = false;
 
     // Draw initial status bar
-    draw_status_bar(&mut stdout, term_rows, term_cols, session_name, &fg_color, cursor_visible)?;
+    draw_status_bar(&mut stdout, term_rows, term_cols, session_name, &fg_color, &bg_color, cursor_visible)?;
     stdout.flush()?;
 
     // Nudge the inner app to redraw by toggling the PTY size.
@@ -113,6 +113,7 @@ pub fn run_with_overlay(
         master_fd,
         session_name,
         &fg_color,
+        &bg_color,
         &mut ctrl_p_pressed,
         &mut mouse_mode,
         &mut app_cursor,
@@ -136,6 +137,7 @@ fn run_event_loop(
     master_fd: RawFd,
     session_name: &str,
     fg_color: &str,
+    bg_color: &str,
     ctrl_p_pressed: &mut bool,
     mouse_mode: &mut bool,
     app_cursor: &mut bool,
@@ -168,7 +170,7 @@ fn run_event_loop(
             // Begin synchronized update (terminals that don't support it ignore this)
             stdout.write_all(b"\x1b[?2026h")?;
             stdout.write_all(&buf)?;
-            draw_status_bar(stdout, rows, cols, session_name, fg_color, *cursor_visible)?;
+            draw_status_bar(stdout, rows, cols, session_name, fg_color, bg_color, *cursor_visible)?;
             // End synchronized update — terminal renders the whole frame at once
             stdout.write_all(b"\x1b[?2026l")?;
             stdout.flush()?;
@@ -249,7 +251,7 @@ fn run_event_loop(
                         let content_rows = rows - 1;
                         set_pty_size(master_fd, content_rows, cols);
                         stdout.write_all(b"\x1b[?2026h")?;
-                        draw_status_bar(stdout, rows, cols, session_name, fg_color, *cursor_visible)?;
+                        draw_status_bar(stdout, rows, cols, session_name, fg_color, bg_color, *cursor_visible)?;
                         stdout.write_all(b"\x1b[?2026l")?;
                         stdout.flush()?;
                     }
@@ -275,6 +277,7 @@ fn draw_status_bar(
     cols: u16,
     session_name: &str,
     fg_color: &str,
+    bg_color: &str,
     cursor_visible: bool,
 ) -> Result<()> {
     let content_rows = rows.saturating_sub(1).max(1);
@@ -302,9 +305,10 @@ fn draw_status_bar(
     let cursor_suffix = if cursor_visible { "\x1b[?25h" } else { "" };
     write!(
         stdout,
-        "\x1b[?25l\x1b[s\x1b[{};1H\x1b[2K\x1b[{}1;100m{}{}{}\x1b[0m\x1b[1;{}r\x1b[u{}",
+        "\x1b[?25l\x1b[s\x1b[{};1H\x1b[2K\x1b[{}{}1m{}{}{}\x1b[0m\x1b[1;{}r\x1b[u{}",
         rows,
         fg_color,
+        bg_color,
         left,
         " ".repeat(pad),
         right,
@@ -389,12 +393,16 @@ fn encode_mouse_event(kind: MouseEventKind, col: u16, row: u16) -> Option<String
     ))
 }
 
-/// Parse a color name/hex into an ANSI SGR foreground code string.
+/// Parse a color name/hex into foreground and background SGR code fragments.
 ///
-/// Returns a string like "37;" (white fg) or "38;2;R;G;B;" (true color fg).
-fn parse_color_ansi(color: Option<&str>) -> String {
+/// Returns `(fg, bg)` where each is a string like `"97;"` or `"48;2;R;G;B;"`.
+/// The background is set from the user's color choice; the foreground is
+/// auto-picked (black or bright-white) based on the background's luminance.
+///
+/// Default (no color): bright white on bright black (`"97;"`, `"100;"`).
+fn parse_status_colors(color: Option<&str>) -> (String, String) {
     match color {
-        None => "37;".to_string(), // white
+        None => ("97;".to_string(), "100;".to_string()),
         Some(s) => {
             // Try hex color
             if let Some(hex) = s.strip_prefix('#') {
@@ -404,33 +412,40 @@ fn parse_color_ansi(color: Option<&str>) -> String {
                         u8::from_str_radix(&hex[2..4], 16),
                         u8::from_str_radix(&hex[4..6], 16),
                     ) {
-                        return format!("38;2;{};{};{};", r, g, b);
+                        let fg = luminance_fg(r, g, b);
+                        return (fg.to_string(), format!("48;2;{};{};{};", r, g, b));
                     }
                 }
             }
-            // Named colors → SGR foreground codes
-            match s.to_lowercase().as_str() {
-                "black" => "30;",
-                "red" => "31;",
-                "green" => "32;",
-                "yellow" => "33;",
-                "blue" => "34;",
-                "magenta" => "35;",
-                "cyan" => "36;",
-                "white" => "37;",
-                "gray" | "grey" => "90;",
-                "darkgray" | "darkgrey" => "90;",
-                "lightred" => "91;",
-                "lightgreen" => "92;",
-                "lightyellow" => "93;",
-                "lightblue" => "94;",
-                "lightmagenta" => "95;",
-                "lightcyan" => "96;",
-                _ => "37;",
-            }
-            .to_string()
+            // Named colors → SGR background codes + RGB for luminance
+            let (bg, r, g, b) = match s.to_lowercase().as_str() {
+                "black" => ("40;", 0u8, 0u8, 0u8),
+                "red" => ("41;", 170, 0, 0),
+                "green" => ("42;", 0, 170, 0),
+                "yellow" => ("43;", 170, 170, 0),
+                "blue" => ("44;", 0, 0, 170),
+                "magenta" => ("45;", 170, 0, 170),
+                "cyan" => ("46;", 0, 170, 170),
+                "white" => ("47;", 170, 170, 170),
+                "gray" | "grey" => ("100;", 85, 85, 85),
+                "lightred" => ("101;", 255, 85, 85),
+                "lightgreen" => ("102;", 85, 255, 85),
+                "lightyellow" => ("103;", 255, 255, 85),
+                "lightblue" => ("104;", 85, 85, 255),
+                "lightmagenta" => ("105;", 255, 85, 255),
+                "lightcyan" => ("106;", 85, 255, 255),
+                _ => return ("97;".to_string(), "100;".to_string()),
+            };
+            let fg = luminance_fg(r, g, b);
+            (fg.to_string(), bg.to_string())
         }
     }
+}
+
+/// Pick black or bright-white foreground based on perceived luminance.
+fn luminance_fg(r: u8, g: u8, b: u8) -> &'static str {
+    let l = 0.299 * r as f64 + 0.587 * g as f64 + 0.114 * b as f64;
+    if l >= 128.0 { "30;" } else { "97;" }
 }
 
 fn key_to_bytes(key: KeyEvent, app_cursor: bool) -> Vec<u8> {
@@ -590,42 +605,57 @@ mod tests {
     use crossterm::event::MouseEventKind;
 
     #[test]
-    fn test_parse_color_ansi_none() {
-        assert_eq!(parse_color_ansi(None), "37;");
+    fn test_parse_status_colors_none() {
+        // Default: bright white on bright black
+        assert_eq!(parse_status_colors(None), ("97;".to_string(), "100;".to_string()));
     }
 
     #[test]
-    fn test_parse_color_ansi_named() {
-        assert_eq!(parse_color_ansi(Some("blue")), "34;");
-        assert_eq!(parse_color_ansi(Some("Blue")), "34;");
-        assert_eq!(parse_color_ansi(Some("RED")), "31;");
-        assert_eq!(parse_color_ansi(Some("green")), "32;");
-        assert_eq!(parse_color_ansi(Some("yellow")), "33;");
-        assert_eq!(parse_color_ansi(Some("cyan")), "36;");
-        assert_eq!(parse_color_ansi(Some("magenta")), "35;");
-        assert_eq!(parse_color_ansi(Some("white")), "37;");
-        assert_eq!(parse_color_ansi(Some("black")), "30;");
-        assert_eq!(parse_color_ansi(Some("gray")), "90;");
-        assert_eq!(parse_color_ansi(Some("grey")), "90;");
+    fn test_parse_status_colors_named() {
+        // Dark backgrounds → white text
+        assert_eq!(parse_status_colors(Some("blue")), ("97;".to_string(), "44;".to_string()));
+        assert_eq!(parse_status_colors(Some("Blue")), ("97;".to_string(), "44;".to_string()));
+        assert_eq!(parse_status_colors(Some("RED")), ("97;".to_string(), "41;".to_string()));
+        assert_eq!(parse_status_colors(Some("black")), ("97;".to_string(), "40;".to_string()));
+        assert_eq!(parse_status_colors(Some("magenta")), ("97;".to_string(), "45;".to_string()));
+        assert_eq!(parse_status_colors(Some("gray")), ("97;".to_string(), "100;".to_string()));
+        assert_eq!(parse_status_colors(Some("grey")), ("97;".to_string(), "100;".to_string()));
+        // Light backgrounds → black text
+        assert_eq!(parse_status_colors(Some("white")), ("30;".to_string(), "47;".to_string()));
+        assert_eq!(parse_status_colors(Some("lightgreen")), ("30;".to_string(), "102;".to_string()));
+        assert_eq!(parse_status_colors(Some("lightcyan")), ("30;".to_string(), "106;".to_string()));
     }
 
     #[test]
-    fn test_parse_color_ansi_hex() {
-        assert_eq!(parse_color_ansi(Some("#ff0000")), "38;2;255;0;0;");
-        assert_eq!(parse_color_ansi(Some("#00ff00")), "38;2;0;255;0;");
-        assert_eq!(parse_color_ansi(Some("#0000ff")), "38;2;0;0;255;");
-        assert_eq!(parse_color_ansi(Some("#abcdef")), "38;2;171;205;239;");
+    fn test_parse_status_colors_named_luminance() {
+        // yellow: L = 0.299*170 + 0.587*170 + 0.114*0 = 150.6 → black text
+        assert_eq!(parse_status_colors(Some("yellow")), ("30;".to_string(), "43;".to_string()));
+        // green: L = 0.299*0 + 0.587*170 + 0.114*0 = 99.8 → white text
+        assert_eq!(parse_status_colors(Some("green")), ("97;".to_string(), "42;".to_string()));
+        // cyan: L = 0.299*0 + 0.587*170 + 0.114*170 = 119.2 → white text
+        assert_eq!(parse_status_colors(Some("cyan")), ("97;".to_string(), "46;".to_string()));
     }
 
     #[test]
-    fn test_parse_color_ansi_invalid_hex() {
-        assert_eq!(parse_color_ansi(Some("#fff")), "37;");
-        assert_eq!(parse_color_ansi(Some("#gggggg")), "37;");
+    fn test_parse_status_colors_hex() {
+        // Dark hex → white text
+        assert_eq!(parse_status_colors(Some("#ff0000")), ("97;".to_string(), "48;2;255;0;0;".to_string()));
+        assert_eq!(parse_status_colors(Some("#0000ff")), ("97;".to_string(), "48;2;0;0;255;".to_string()));
+        // Light hex → black text
+        assert_eq!(parse_status_colors(Some("#ffffff")), ("30;".to_string(), "48;2;255;255;255;".to_string()));
+        assert_eq!(parse_status_colors(Some("#00ff00")), ("30;".to_string(), "48;2;0;255;0;".to_string()));
     }
 
     #[test]
-    fn test_parse_color_ansi_unknown() {
-        assert_eq!(parse_color_ansi(Some("unknown")), "37;");
+    fn test_parse_status_colors_invalid_hex() {
+        // Falls back to default
+        assert_eq!(parse_status_colors(Some("#fff")), ("97;".to_string(), "100;".to_string()));
+        assert_eq!(parse_status_colors(Some("#gggggg")), ("97;".to_string(), "100;".to_string()));
+    }
+
+    #[test]
+    fn test_parse_status_colors_unknown() {
+        assert_eq!(parse_status_colors(Some("unknown")), ("97;".to_string(), "100;".to_string()));
     }
 
     #[test]

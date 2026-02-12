@@ -48,7 +48,7 @@ struct SessionArgs {
     #[arg(long = "no-ssh")]
     no_ssh: bool,
 
-    /// Title bar color (e.g. "blue", "green", "red", "#ff0000")
+    /// Status bar background color (e.g. "blue", "green", "red", "#ff0000")
     #[arg(long)]
     color: Option<String>,
 
