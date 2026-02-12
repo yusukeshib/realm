@@ -321,19 +321,19 @@ fn cmd_config_zsh() -> Result<i32> {
 
     case $state in
         cmd_or_session)
-            local -a subcommands
-            subcommands=(
-                'path:Print workspace path for a session'
-                'upgrade:Self-update to the latest version'
-                'config:Output shell configuration'
-            )
-            _describe 'command' subcommands
             local -a sessions
             if [[ -d "$HOME/.realm/sessions" ]]; then
-                sessions=($(command ls "$HOME/.realm/sessions" 2>/dev/null))
+                for s in "$HOME/.realm/sessions"/*(N:t); do
+                    local desc=""
+                    if [[ -f "$HOME/.realm/sessions/$s/project_dir" ]]; then
+                        desc=$(< "$HOME/.realm/sessions/$s/project_dir")
+                        desc=${{desc/#$HOME/\~}}
+                    fi
+                    sessions+=("$s:[$desc]")
+                done
             fi
             if (( ${{#sessions}} )); then
-                compadd -X 'sessions' -a sessions
+                _describe -V 'session' sessions
             fi
             ;;
         args)
@@ -342,10 +342,17 @@ fn cmd_config_zsh() -> Result<i32> {
                     if (( CURRENT == 2 )); then
                         local -a sessions
                         if [[ -d "$HOME/.realm/sessions" ]]; then
-                            sessions=($(command ls "$HOME/.realm/sessions" 2>/dev/null))
+                            for s in "$HOME/.realm/sessions"/*(N:t); do
+                                local desc=""
+                                if [[ -f "$HOME/.realm/sessions/$s/project_dir" ]]; then
+                                    desc=$(< "$HOME/.realm/sessions/$s/project_dir")
+                                    desc=${{desc/#$HOME/\~}}
+                                fi
+                                sessions+=("$s:[$desc]")
+                            done
                         fi
                         if (( ${{#sessions}} )); then
-                            compadd -a sessions
+                            _describe 'session' sessions
                         fi
                     fi
                     ;;
