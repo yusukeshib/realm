@@ -84,8 +84,8 @@ pub fn run_with_overlay(
     execute!(stdout, EnableMouseCapture)?;
     terminal::enable_raw_mode()?;
 
-    // Set scroll region to reserve bottom row for status bar
-    write!(stdout, "\x1b[1;{}r", content_rows)?;
+    // Clear screen and set scroll region to reserve bottom row for status bar
+    write!(stdout, "\x1b[2J\x1b[H\x1b[1;{}r", content_rows)?;
     stdout.flush()?;
 
     let _guard = TerminalGuard { content_rows };
