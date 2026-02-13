@@ -336,6 +336,21 @@ pub fn start_container_detached(name: &str) -> Result<i32> {
     }
 }
 
+pub fn stop_container(name: &str) -> Result<i32> {
+    let status = Command::new("docker")
+        .args(["stop", &format!("realm-{}", name)])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::inherit())
+        .status()?;
+
+    if status.success() {
+        println!("Session '{}' stopped.", name);
+        Ok(0)
+    } else {
+        Ok(status.code().unwrap_or(1))
+    }
+}
+
 pub fn remove_container(name: &str) {
     let _ = Command::new("docker")
         .args(["rm", "-f", &format!("realm-{}", name)])

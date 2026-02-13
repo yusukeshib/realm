@@ -45,7 +45,9 @@ pub fn sessions_dir() -> Result<PathBuf> {
         .join("sessions"))
 }
 
-const RESERVED_NAMES: &[&str] = &["upgrade", "path", "config"];
+const RESERVED_NAMES: &[&str] = &[
+    "create", "resume", "remove", "stop", "upgrade", "path", "config",
+];
 
 pub fn validate_name(name: &str) -> Result<()> {
     if name.is_empty() {

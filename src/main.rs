@@ -5,7 +5,7 @@ mod session;
 mod tui;
 
 use anyhow::{bail, Result};
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -14,21 +14,41 @@ use std::path::Path;
 #[command(
     name = "realm",
     about = "Sandboxed Docker environments for git repos",
-    args_conflicts_with_subcommands = true,
-    after_help = "Examples:\n  realm                                    # interactive session manager\n  realm my-feature --image ubuntu:latest -- bash\n  realm my-feature\n  realm my-feature -d -- claude -p \"do something\"\n  realm path my-feature\n  realm upgrade\n\nSessions are automatically created if they don't exist."
+    after_help = "Examples:\n  realm                                         # interactive session manager\n  realm create my-feature                        # create a new session\n  realm create my-feature --image ubuntu -- bash # create with options\n  realm resume my-feature                        # resume a session\n  realm resume my-feature -d                     # resume in background\n  realm stop my-feature                          # stop a running session\n  realm remove my-feature                        # remove a session\n  realm path my-feature                          # print workspace path\n  realm upgrade                                  # self-update"
 )]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-
-    #[command(flatten)]
-    session: SessionArgs,
 }
 
-#[derive(Args, Debug)]
-struct SessionArgs {
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Create a new session
+    Create(CreateArgs),
+    /// Resume an existing session
+    Resume(ResumeArgs),
+    /// Remove a session (must be stopped first)
+    Remove(RemoveArgs),
+    /// Stop a running session
+    Stop(StopArgs),
+    /// Print workspace path for a session
+    Path {
+        /// Session name
+        name: String,
+    },
+    /// Self-update to the latest version
+    Upgrade,
+    /// Output shell configuration (e.g. eval "$(realm config zsh)")
+    Config {
+        #[command(subcommand)]
+        shell: ConfigShell,
+    },
+}
+
+#[derive(clap::Args, Debug)]
+struct CreateArgs {
     /// Session name
-    name: Option<String>,
+    name: String,
 
     /// Run container in the background (detached)
     #[arg(short = 'd')]
@@ -52,20 +72,31 @@ struct SessionArgs {
     cmd: Vec<String>,
 }
 
-#[derive(Subcommand, Debug)]
-enum Commands {
-    /// Print workspace path for a session
-    Path {
-        /// Session name
-        name: String,
-    },
-    /// Self-update to the latest version
-    Upgrade,
-    /// Output shell configuration (e.g. eval "$(realm config zsh)")
-    Config {
-        #[command(subcommand)]
-        shell: ConfigShell,
-    },
+#[derive(clap::Args, Debug)]
+struct ResumeArgs {
+    /// Session name
+    name: String,
+
+    /// Run container in the background (detached)
+    #[arg(short = 'd')]
+    detach: bool,
+
+    /// Extra Docker flags (e.g. -e KEY=VALUE, -v /host:/container, --network host).
+    /// Overrides $REALM_DOCKER_ARGS when provided.
+    #[arg(long = "docker-args", allow_hyphen_values = true)]
+    docker_args: Option<String>,
+}
+
+#[derive(clap::Args, Debug)]
+struct RemoveArgs {
+    /// Session name
+    name: String,
+}
+
+#[derive(clap::Args, Debug)]
+struct StopArgs {
+    /// Session name
+    name: String,
 }
 
 #[derive(Subcommand, Debug)]
@@ -80,35 +111,41 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
+        Some(Commands::Create(args)) => {
+            let docker_args = args
+                .docker_args
+                .or_else(|| std::env::var("REALM_DOCKER_ARGS").ok())
+                .unwrap_or_default();
+            let cmd = if args.cmd.is_empty() {
+                None
+            } else {
+                Some(args.cmd)
+            };
+            cmd_create(
+                &args.name,
+                args.image,
+                &docker_args,
+                cmd,
+                !args.no_ssh,
+                args.detach,
+            )
+        }
+        Some(Commands::Resume(args)) => {
+            let docker_args = args
+                .docker_args
+                .or_else(|| std::env::var("REALM_DOCKER_ARGS").ok())
+                .unwrap_or_default();
+            cmd_resume(&args.name, &docker_args, args.detach)
+        }
+        Some(Commands::Remove(args)) => cmd_remove(&args.name),
+        Some(Commands::Stop(args)) => cmd_stop(&args.name),
         Some(Commands::Path { name }) => cmd_path(&name),
         Some(Commands::Upgrade) => cmd_upgrade(),
         Some(Commands::Config { shell }) => match shell {
             ConfigShell::Zsh => cmd_config_zsh(),
             ConfigShell::Bash => cmd_config_bash(),
         },
-        None => {
-            let session = cli.session;
-            let docker_args = session
-                .docker_args
-                .or_else(|| std::env::var("REALM_DOCKER_ARGS").ok())
-                .unwrap_or_default();
-
-            match session.name.as_deref() {
-                None if session.detach => {
-                    eprintln!("Error: Session name required for -d.");
-                    std::process::exit(1);
-                }
-                None => cmd_list(),
-                Some(name) => cmd_create_or_resume(
-                    name,
-                    session.image,
-                    docker_args,
-                    session.cmd,
-                    !session.no_ssh,
-                    session.detach,
-                ),
-            }
-        }
+        None => cmd_list(),
     };
 
     match result {
@@ -139,7 +176,7 @@ fn cmd_list() -> Result<i32> {
     let docker_args = std::env::var("REALM_DOCKER_ARGS").unwrap_or_default();
 
     match tui::session_manager(&sessions, delete_fn)? {
-        tui::TuiAction::Resume(name) => cmd_resume(&name, &docker_args, vec![], true, false),
+        tui::TuiAction::Resume(name) => cmd_resume(&name, &docker_args, false),
         tui::TuiAction::New {
             name,
             image,
@@ -158,6 +195,14 @@ fn cmd_create(
     detach: bool,
 ) -> Result<i32> {
     session::validate_name(name)?;
+
+    if session::session_exists(name)? {
+        bail!(
+            "Session '{}' already exists. Use `realm resume {}` to resume it.",
+            name,
+            name
+        );
+    }
 
     let cwd =
         fs::canonicalize(".").map_err(|_| anyhow::anyhow!("Cannot resolve current directory."))?;
@@ -204,43 +249,8 @@ fn cmd_create(
     })
 }
 
-fn cmd_create_or_resume(
-    name: &str,
-    image: Option<String>,
-    docker_args: String,
-    cmd: Vec<String>,
-    ssh: bool,
-    detach: bool,
-) -> Result<i32> {
-    // Check if session exists
-    if session::session_exists(name)? {
-        // Session exists - resume it
-        return cmd_resume(name, &docker_args, cmd, ssh, detach);
-    }
-
-    // Session doesn't exist - create it
-    let cmd = if cmd.is_empty() { None } else { Some(cmd) };
-    cmd_create(name, image, &docker_args, cmd, ssh, detach)
-}
-
-fn cmd_resume(
-    name: &str,
-    docker_args: &str,
-    cmd: Vec<String>,
-    ssh: bool,
-    detach: bool,
-) -> Result<i32> {
+fn cmd_resume(name: &str, docker_args: &str, detach: bool) -> Result<i32> {
     session::validate_name(name)?;
-
-    if !cmd.is_empty() {
-        bail!(
-            "Cannot pass a command when resuming session '{}'.\n\
-             Use `realm {}` to resume, or `realm delete {}` and recreate it.",
-            name,
-            name,
-            name
-        );
-    }
 
     let sess = session::load(name)?;
 
@@ -285,10 +295,51 @@ fn cmd_resume(
             env: &sess.env,
             home: &home,
             docker_args: docker_args_opt,
-            ssh,
+            ssh: sess.ssh,
             detach,
         })
     }
+}
+
+fn cmd_remove(name: &str) -> Result<i32> {
+    session::validate_name(name)?;
+
+    if !session::session_exists(name)? {
+        bail!("Session '{}' not found.", name);
+    }
+
+    docker::check()?;
+
+    if docker::container_is_running(name) {
+        bail!(
+            "Session '{}' is still running. Stop it first with `realm stop {}`.",
+            name,
+            name
+        );
+    }
+
+    docker::remove_container(name);
+    docker::remove_workspace(name);
+    session::remove_dir(name)?;
+
+    println!("Session '{}' removed.", name);
+    Ok(0)
+}
+
+fn cmd_stop(name: &str) -> Result<i32> {
+    session::validate_name(name)?;
+
+    if !session::session_exists(name)? {
+        bail!("Session '{}' not found.", name);
+    }
+
+    docker::check()?;
+
+    if !docker::container_is_running(name) {
+        bail!("Session '{}' is not running.", name);
+    }
+
+    docker::stop_container(name)
 }
 
 fn cmd_path(name: &str) -> Result<i32> {
@@ -307,53 +358,65 @@ fn cmd_path(name: &str) -> Result<i32> {
 
 fn cmd_config_zsh() -> Result<i32> {
     print!(
-        r#"_realm() {{
+        r#"__realm_sessions() {{
+    local -a sessions
+    if [[ -d "$HOME/.realm/sessions" ]]; then
+        for s in "$HOME/.realm/sessions"/*(N:t); do
+            local desc=""
+            if [[ -f "$HOME/.realm/sessions/$s/project_dir" ]]; then
+                desc=$(< "$HOME/.realm/sessions/$s/project_dir")
+                desc=${{desc/#$HOME/\~}}
+            fi
+            sessions+=("$s:[$desc]")
+        done
+    fi
+    if (( ${{#sessions}} )); then
+        _describe 'session' sessions
+    fi
+}}
+
+_realm() {{
     local curcontext="$curcontext" state line
     typeset -A opt_args
 
     _arguments -C \
-        '-d[Run container in the background]' \
-        '--image=[Docker image to use]:image' \
-        '--docker-args=[Extra Docker flags]:args' \
-        '--no-ssh[Disable SSH agent forwarding]' \
-        '1: :->cmd_or_session' \
+        '1: :->subcmd' \
         '*:: :->args'
 
     case $state in
-        cmd_or_session)
-            local -a sessions
-            if [[ -d "$HOME/.realm/sessions" ]]; then
-                for s in "$HOME/.realm/sessions"/*(N:t); do
-                    local desc=""
-                    if [[ -f "$HOME/.realm/sessions/$s/project_dir" ]]; then
-                        desc=$(< "$HOME/.realm/sessions/$s/project_dir")
-                        desc=${{desc/#$HOME/\~}}
-                    fi
-                    sessions+=("$s:[$desc]")
-                done
-            fi
-            if (( ${{#sessions}} )); then
-                _describe -V 'session' sessions
-            fi
+        subcmd)
+            local -a subcmds
+            subcmds=(
+                'create:Create a new session'
+                'resume:Resume an existing session'
+                'remove:Remove a session'
+                'stop:Stop a running session'
+                'path:Print workspace path for a session'
+                'upgrade:Self-update to the latest version'
+                'config:Output shell configuration'
+            )
+            _describe 'command' subcmds
             ;;
         args)
             case $words[1] in
-                path)
+                create)
+                    _arguments \
+                        '-d[Run container in the background]' \
+                        '--image=[Docker image to use]:image' \
+                        '--docker-args=[Extra Docker flags]:args' \
+                        '--no-ssh[Disable SSH agent forwarding]' \
+                        '1:session name:' \
+                        '*:command:'
+                    ;;
+                resume)
+                    _arguments \
+                        '-d[Run container in the background]' \
+                        '--docker-args=[Extra Docker flags]:args' \
+                        '1:session name:__realm_sessions'
+                    ;;
+                remove|stop|path)
                     if (( CURRENT == 2 )); then
-                        local -a sessions
-                        if [[ -d "$HOME/.realm/sessions" ]]; then
-                            for s in "$HOME/.realm/sessions"/*(N:t); do
-                                local desc=""
-                                if [[ -f "$HOME/.realm/sessions/$s/project_dir" ]]; then
-                                    desc=$(< "$HOME/.realm/sessions/$s/project_dir")
-                                    desc=${{desc/#$HOME/\~}}
-                                fi
-                                sessions+=("$s:[$desc]")
-                            done
-                        fi
-                        if (( ${{#sessions}} )); then
-                            _describe 'session' sessions
-                        fi
+                        __realm_sessions
                     fi
                     ;;
                 config)
@@ -379,31 +442,53 @@ fn cmd_config_bash() -> Result<i32> {
     local cur prev words cword
     _init_completion || return
 
-    local subcommands="path upgrade config"
-    local sessions=""
-    if [[ -d "$HOME/.realm/sessions" ]]; then
-        sessions=$(command ls "$HOME/.realm/sessions" 2>/dev/null)
-    fi
-
-    case "${{words[1]}}" in
-        path)
-            COMPREPLY=($(compgen -W "$sessions" -- "$cur"))
-            return
-            ;;
-        config)
-            COMPREPLY=($(compgen -W "zsh bash" -- "$cur"))
-            return
-            ;;
-    esac
+    local subcommands="create resume remove stop path upgrade config"
+    local session_cmds="resume remove stop path"
 
     if [[ $cword -eq 1 ]]; then
-        COMPREPLY=($(compgen -W "$subcommands $sessions" -- "$cur"))
+        COMPREPLY=($(compgen -W "$subcommands" -- "$cur"))
         return
     fi
 
-    case "$cur" in
-        -*)
-            COMPREPLY=($(compgen -W "-d --image --docker-args --no-ssh" -- "$cur"))
+    local subcmd="${{words[1]}}"
+
+    case "$subcmd" in
+        create)
+            case "$cur" in
+                -*)
+                    COMPREPLY=($(compgen -W "-d --image --docker-args --no-ssh" -- "$cur"))
+                    ;;
+            esac
+            ;;
+        resume)
+            case "$cur" in
+                -*)
+                    COMPREPLY=($(compgen -W "-d --docker-args" -- "$cur"))
+                    ;;
+                *)
+                    if [[ $cword -eq 2 ]]; then
+                        local sessions=""
+                        if [[ -d "$HOME/.realm/sessions" ]]; then
+                            sessions=$(command ls "$HOME/.realm/sessions" 2>/dev/null)
+                        fi
+                        COMPREPLY=($(compgen -W "$sessions" -- "$cur"))
+                    fi
+                    ;;
+            esac
+            ;;
+        remove|stop|path)
+            if [[ $cword -eq 2 ]]; then
+                local sessions=""
+                if [[ -d "$HOME/.realm/sessions" ]]; then
+                    sessions=$(command ls "$HOME/.realm/sessions" 2>/dev/null)
+                fi
+                COMPREPLY=($(compgen -W "$sessions" -- "$cur"))
+            fi
+            ;;
+        config)
+            if [[ $cword -eq 2 ]]; then
+                COMPREPLY=($(compgen -W "zsh bash" -- "$cur"))
+            fi
             ;;
     esac
 }}
@@ -538,109 +623,213 @@ mod tests {
         Cli::try_parse_from(full_args)
     }
 
+    // -- No args = TUI --
+
     #[test]
-    fn test_no_args_lists() {
+    fn test_no_args_launches_tui() {
         let cli = parse(&[]);
         assert!(cli.command.is_none());
-        assert!(cli.session.name.is_none());
-        assert!(!cli.session.detach);
+    }
+
+    // -- create subcommand --
+
+    #[test]
+    fn test_create_name_only() {
+        let cli = parse(&["create", "my-session"]);
+        match cli.command {
+            Some(Commands::Create(args)) => {
+                assert_eq!(args.name, "my-session");
+                assert!(!args.detach);
+                assert!(args.image.is_none());
+                assert!(args.docker_args.is_none());
+                assert!(!args.no_ssh);
+                assert!(args.cmd.is_empty());
+            }
+            other => panic!("expected Create, got {:?}", other),
+        }
     }
 
     #[test]
-    fn test_name_only_resumes() {
-        let cli = parse(&["my-session"]);
-        assert!(cli.command.is_none());
-        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
-        assert!(!cli.session.detach);
-    }
-
-    #[test]
-    fn test_detach_flag_before_name() {
-        let cli = parse(&["-d", "my-session"]);
-        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
-        assert!(cli.session.detach);
-    }
-
-    #[test]
-    fn test_detach_flag_after_name() {
-        let cli = parse(&["my-session", "-d"]);
-        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
-        assert!(cli.session.detach);
-    }
-
-    #[test]
-    fn test_detach_with_command() {
-        let cli = parse(&["my-session", "-d", "--", "sleep", "60"]);
-        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
-        assert!(cli.session.detach);
-        assert_eq!(cli.session.cmd, vec!["sleep", "60"]);
-    }
-
-    #[test]
-    fn test_detach_without_name() {
-        let cli = parse(&["-d"]);
-        assert!(cli.session.name.is_none());
-        assert!(cli.session.detach);
-    }
-
-    #[test]
-    fn test_create_with_image() {
-        let cli = parse(&["my-session", "--image", "ubuntu:latest"]);
-        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.session.image.as_deref(), Some("ubuntu:latest"));
-    }
-
-    #[test]
-    fn test_with_command() {
-        let cli = parse(&["my-session", "--", "bash", "-c", "echo hi"]);
-        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.session.cmd, vec!["bash", "-c", "echo hi"]);
-    }
-
-    #[test]
-    fn test_create_with_command() {
-        let cli = parse(&["my-session", "--", "bash"]);
-        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
-        assert_eq!(cli.session.cmd, vec!["bash"]);
-    }
-
-    #[test]
-    fn test_create_all_options() {
+    fn test_create_with_all_options() {
         let cli = parse(&[
+            "create",
             "full-session",
+            "-d",
             "--image",
             "python:3.11",
             "--docker-args",
             "-e FOO=bar --network host",
+            "--no-ssh",
             "--",
             "python",
             "main.py",
         ]);
-        assert_eq!(cli.session.name.as_deref(), Some("full-session"));
-        assert_eq!(cli.session.image.as_deref(), Some("python:3.11"));
-        assert_eq!(
-            cli.session.docker_args.as_deref(),
-            Some("-e FOO=bar --network host")
-        );
-        assert_eq!(cli.session.cmd, vec!["python", "main.py"]);
+        match cli.command {
+            Some(Commands::Create(args)) => {
+                assert_eq!(args.name, "full-session");
+                assert!(args.detach);
+                assert_eq!(args.image.as_deref(), Some("python:3.11"));
+                assert_eq!(
+                    args.docker_args.as_deref(),
+                    Some("-e FOO=bar --network host")
+                );
+                assert!(args.no_ssh);
+                assert_eq!(args.cmd, vec!["python", "main.py"]);
+            }
+            other => panic!("expected Create, got {:?}", other),
+        }
     }
 
     #[test]
-    fn test_docker_args() {
-        let cli = parse(&["my-session", "--docker-args", "-e KEY=val -v /a:/b"]);
-        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
-        assert_eq!(
-            cli.session.docker_args.as_deref(),
-            Some("-e KEY=val -v /a:/b")
-        );
+    fn test_create_with_image() {
+        let cli = parse(&["create", "my-session", "--image", "ubuntu:latest"]);
+        match cli.command {
+            Some(Commands::Create(args)) => {
+                assert_eq!(args.name, "my-session");
+                assert_eq!(args.image.as_deref(), Some("ubuntu:latest"));
+            }
+            other => panic!("expected Create, got {:?}", other),
+        }
     }
 
     #[test]
-    fn test_empty_command_after_separator() {
-        let cli = parse(&["my-session", "--"]);
-        assert_eq!(cli.session.name.as_deref(), Some("my-session"));
-        assert!(cli.session.cmd.is_empty());
+    fn test_create_with_command() {
+        let cli = parse(&["create", "my-session", "--", "bash", "-c", "echo hi"]);
+        match cli.command {
+            Some(Commands::Create(args)) => {
+                assert_eq!(args.name, "my-session");
+                assert_eq!(args.cmd, vec!["bash", "-c", "echo hi"]);
+            }
+            other => panic!("expected Create, got {:?}", other),
+        }
     }
+
+    #[test]
+    fn test_create_detach() {
+        let cli = parse(&["create", "my-session", "-d"]);
+        match cli.command {
+            Some(Commands::Create(args)) => {
+                assert_eq!(args.name, "my-session");
+                assert!(args.detach);
+            }
+            other => panic!("expected Create, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_create_requires_name() {
+        let result = try_parse(&["create"]);
+        assert!(result.is_err());
+    }
+
+    // -- resume subcommand --
+
+    #[test]
+    fn test_resume_name_only() {
+        let cli = parse(&["resume", "my-session"]);
+        match cli.command {
+            Some(Commands::Resume(args)) => {
+                assert_eq!(args.name, "my-session");
+                assert!(!args.detach);
+                assert!(args.docker_args.is_none());
+            }
+            other => panic!("expected Resume, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_resume_detach() {
+        let cli = parse(&["resume", "my-session", "-d"]);
+        match cli.command {
+            Some(Commands::Resume(args)) => {
+                assert_eq!(args.name, "my-session");
+                assert!(args.detach);
+            }
+            other => panic!("expected Resume, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_resume_with_docker_args() {
+        let cli = parse(&["resume", "my-session", "--docker-args", "-e KEY=val"]);
+        match cli.command {
+            Some(Commands::Resume(args)) => {
+                assert_eq!(args.name, "my-session");
+                assert_eq!(args.docker_args.as_deref(), Some("-e KEY=val"));
+            }
+            other => panic!("expected Resume, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_resume_requires_name() {
+        let result = try_parse(&["resume"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resume_rejects_image() {
+        let result = try_parse(&["resume", "my-session", "--image", "ubuntu"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resume_rejects_no_ssh() {
+        let result = try_parse(&["resume", "my-session", "--no-ssh"]);
+        assert!(result.is_err());
+    }
+
+    // -- remove subcommand --
+
+    #[test]
+    fn test_remove_parses() {
+        let cli = parse(&["remove", "my-session"]);
+        match cli.command {
+            Some(Commands::Remove(args)) => {
+                assert_eq!(args.name, "my-session");
+            }
+            other => panic!("expected Remove, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_remove_requires_name() {
+        let result = try_parse(&["remove"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remove_rejects_flags() {
+        let result = try_parse(&["remove", "my-session", "-d"]);
+        assert!(result.is_err());
+    }
+
+    // -- stop subcommand --
+
+    #[test]
+    fn test_stop_parses() {
+        let cli = parse(&["stop", "my-session"]);
+        match cli.command {
+            Some(Commands::Stop(args)) => {
+                assert_eq!(args.name, "my-session");
+            }
+            other => panic!("expected Stop, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_stop_requires_name() {
+        let result = try_parse(&["stop"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_stop_rejects_flags() {
+        let result = try_parse(&["stop", "my-session", "-d"]);
+        assert!(result.is_err());
+    }
+
+    // -- path subcommand --
 
     #[test]
     fn test_path_subcommand_parses() {
@@ -657,25 +846,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_path_with_command_rejected() {
-        // Clap rejects flags on subcommands thanks to args_conflicts_with_subcommands
-        let result = try_parse(&["path", "foo", "--", "bash"]);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_path_rejects_flags() {
-        let result = try_parse(&["path", "foo", "-d"]);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_regular_session_extra_arg_rejected() {
-        // With the arg positional removed, extra args are rejected by clap
-        let result = try_parse(&["my-session", "extra"]);
-        assert!(result.is_err());
-    }
+    // -- upgrade subcommand --
 
     #[test]
     fn test_upgrade_subcommand_parses() {
@@ -688,6 +859,8 @@ mod tests {
         let result = try_parse(&["upgrade", "-d"]);
         assert!(result.is_err());
     }
+
+    // -- config subcommand --
 
     #[test]
     fn test_config_zsh_subcommand_parses() {
@@ -717,15 +890,23 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // -- bare name rejected --
+
     #[test]
-    fn test_resume_rejects_command() {
-        let result = cmd_resume("test-session", "", vec!["bash".into()], true, false);
-        let err = result.unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("Cannot pass a command when resuming"),
-            "unexpected error: {}",
-            err
-        );
+    fn test_bare_name_rejected() {
+        let result = try_parse(&["my-session"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bare_name_with_flags_rejected() {
+        let result = try_parse(&["my-session", "-d"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bare_name_with_image_rejected() {
+        let result = try_parse(&["my-session", "--image", "ubuntu"]);
+        assert!(result.is_err());
     }
 }
