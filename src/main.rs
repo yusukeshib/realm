@@ -159,14 +159,13 @@ fn cmd_create(
 ) -> Result<i32> {
     session::validate_name(name)?;
 
-    let project_dir = fs::canonicalize(".")
-        .map_err(|_| anyhow::anyhow!("Cannot resolve current directory."))?
+    let cwd =
+        fs::canonicalize(".").map_err(|_| anyhow::anyhow!("Cannot resolve current directory."))?;
+
+    let project_dir = git::find_root(&cwd)
+        .ok_or_else(|| anyhow::anyhow!("'{}' is not inside a git repository.", cwd.display()))?
         .to_string_lossy()
         .to_string();
-
-    if !git::is_repo(Path::new(&project_dir)) {
-        bail!("'{}' is not a git repository.", project_dir);
-    }
 
     docker::check()?;
 
