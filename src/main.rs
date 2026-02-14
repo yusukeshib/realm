@@ -6,6 +6,7 @@ mod tui;
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
+use std::ffi::OsString;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -14,7 +15,7 @@ use std::path::Path;
 #[command(
     name = "box",
     about = "Sandboxed Docker environments for git repos",
-    after_help = "Examples:\n  box                                         # interactive session manager\n  box create my-feature                        # create a new session\n  box create my-feature --image ubuntu -- bash # create with options\n  box resume my-feature                        # resume a session\n  box resume my-feature -d                     # resume in background\n  box stop my-feature                          # stop a running session\n  box remove my-feature                        # remove a session\n  box path my-feature                          # print workspace path\n  box upgrade                                  # self-update"
+    after_help = "Examples:\n  box                                         # interactive session manager\n  box my-feature                               # shortcut for `box create my-feature`\n  box create my-feature                        # create a new session\n  box create my-feature --image ubuntu -- bash # create with options\n  box resume my-feature                        # resume a session\n  box resume my-feature -d                     # resume in background\n  box stop my-feature                          # stop a running session\n  box remove my-feature                        # remove a session\n  box path my-feature                          # print workspace path\n  box upgrade                                  # self-update"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -43,6 +44,9 @@ enum Commands {
         #[command(subcommand)]
         shell: ConfigShell,
     },
+    /// Shortcut: `box <name>` is equivalent to `box create <name>`
+    #[command(external_subcommand)]
+    External(Vec<OsString>),
 }
 
 #[derive(clap::Args, Debug)]
@@ -145,6 +149,11 @@ fn main() {
             ConfigShell::Zsh => cmd_config_zsh(),
             ConfigShell::Bash => cmd_config_bash(),
         },
+        Some(Commands::External(args)) => {
+            let name = args[0].to_string_lossy().to_string();
+            let docker_args = std::env::var("BOX_DOCKER_ARGS").unwrap_or_default();
+            cmd_create(&name, None, &docker_args, None, true, false)
+        }
         None => cmd_list(),
     };
 
@@ -901,23 +910,17 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // -- bare name rejected --
+    // -- bare name shortcut (external subcommand) --
 
     #[test]
-    fn test_bare_name_rejected() {
-        let result = try_parse(&["my-session"]);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_bare_name_with_flags_rejected() {
-        let result = try_parse(&["my-session", "-d"]);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_bare_name_with_image_rejected() {
-        let result = try_parse(&["my-session", "--image", "ubuntu"]);
-        assert!(result.is_err());
+    fn test_bare_name_parsed_as_external() {
+        let cli = parse(&["my-session"]);
+        match cli.command {
+            Some(Commands::External(args)) => {
+                assert_eq!(args.len(), 1);
+                assert_eq!(args[0], "my-session");
+            }
+            other => panic!("expected External, got {:?}", other),
+        }
     }
 }

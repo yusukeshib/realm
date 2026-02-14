@@ -58,8 +58,8 @@ nix run github:yusukeshib/box
 ## クイックスタート
 
 ```bash
-box create my-feature --image ubuntu:latest -- bash
-# gitアクセス可能な隔離コンテナの中にいます
+box my-feature
+# `box create my-feature` のショートカット — 新しい隔離セッションを作成
 ```
 
 Boxはgitリポジトリ内で実行する必要があります — 現在のリポジトリをコンテナ内にクローンします。
@@ -106,6 +106,7 @@ box create experiment-v2
 
 ```bash
 box                                               セッションマネージャー（TUI）
+box <name>                                        `box create <name>` のショートカット
 box create <name> [options] [-- cmd...]           新しいセッションを作成
 box resume <name> [-d] [--docker-args <args>]     既存のセッションを再開
 box stop <name>                                   実行中のセッションを停止
@@ -135,7 +136,10 @@ box upgrade                                       最新版にアップグレー
 ### セッションの作成
 
 ```bash
-# デフォルト: alpine:latest イメージ、カレントディレクトリ
+# ショートカット: 名前を渡すだけ
+box my-feature
+
+# 明示的な形式
 box create my-feature
 
 # カスタムイメージでbashを使用

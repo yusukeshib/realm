@@ -58,8 +58,8 @@ Pre-built binaries are available on the [GitHub Releases](https://github.com/yus
 ## Quick Start
 
 ```bash
-box create my-feature --image ubuntu:latest -- bash
-# You're now in an isolated container with full git access
+box my-feature
+# Shortcut for `box create my-feature` — creates a new isolated session
 ```
 
 Box must be run inside a git repository — it clones the current repo into the container.
@@ -106,6 +106,7 @@ box create experiment-v2
 
 ```bash
 box                                               Session manager (TUI)
+box <name>                                        Shortcut for `box create <name>`
 box create <name> [options] [-- cmd...]           Create a new session
 box resume <name> [-d] [--docker-args <args>]     Resume an existing session
 box stop <name>                                   Stop a running session
@@ -135,7 +136,10 @@ Running `box` with no arguments opens an interactive TUI:
 ### Create a session
 
 ```bash
-# Default: alpine:latest image, current directory
+# Shortcut: just pass a name
+box my-feature
+
+# Equivalent explicit form
 box create my-feature
 
 # Custom image with bash
