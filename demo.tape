@@ -13,94 +13,72 @@ Set TypingSpeed 60ms
 
 # ── 1. Launch TUI session manager ──────────────────────────────
 
-Sleep 500ms
+Sleep 1000ms
 Type "box"
-Sleep 300ms
+Sleep 500ms
 Enter
-Wait+Screen@5s /New box/
+
+Sleep 1500ms
 
 # ── 2. Create a new session via TUI ─────────────────────────────
 
+Down
+Sleep 500ms
+Up
+Sleep 500ms
+
 # "New box..." is already selected, press Enter
 Enter
-Wait+Screen@5s /Session name/
+Sleep 1500ms
 
 # Type session name
 Type "my-feature"
-Sleep 300ms
+Sleep 500ms
 Enter
-Wait+Screen@5s /Image/
-
+Sleep 1500ms
+ 
 # Accept default image (alpine:latest)
 Enter
-Wait+Screen@5s /Command/
+Sleep 1500ms
 
 # Accept default command (empty)
+Type "zsh"
+Sleep 1000ms
+Backspace 3
+Sleep 500ms
 Enter
+Sleep 1500ms
 
 # Wait for workspace clone + container start
-Wait+Screen@30s /\$/
+Wait+Screen@5s /\#/
+Sleep 3000ms
+ 
+Enter
 Sleep 500ms
+Type "you are in a box session!"
+Sleep 500ms
+Backspace 25
+Sleep 500ms
+Enter
+Sleep 500ms
+Enter
+Sleep 1500ms
 
 # ── 3. Work inside the container ───────────────────────────────
 
 Type "ls"
 Sleep 200ms
 Enter
-Wait+Screen@5s /\$/
+Wait+Screen@5s /\#/
 Sleep 500ms
 
-Type "git log --oneline -5"
-Sleep 200ms
 Enter
-Wait+Screen@5s /\$/
 Sleep 500ms
-
-Type "git remote -v"
-Sleep 200ms
-Enter
-Wait+Screen@5s /\$/
-Sleep 500ms
-
-# ── 4. Exit the container ─────────────────────────────────────
-
 Type "exit"
-Sleep 200ms
-Enter
-Wait+Screen@5s /\$/
 Sleep 500ms
-
-# ── 5. Resume the session ─────────────────────────────────────
-
-Type "box resume my-feature"
-Sleep 300ms
 Enter
-Wait+Screen@15s /\$/
 Sleep 500ms
-
-Type "echo 'Welcome back!'"
-Sleep 200ms
 Enter
-Wait+Screen@5s /Welcome back/
-Sleep 500ms
-
-Type "exit"
-Sleep 200ms
-Enter
-Wait+Screen@5s /\$/
-Sleep 500ms
-
-# ── 6. Show session in TUI ────────────────────────────────────
-
-Type "box"
-Sleep 300ms
-Enter
-Wait+Screen@5s /my-feature/
-
-# Navigate down to show the session
-Down
-Sleep 1s
-
-# Quit
-Type "q"
+Wait+Screen@5s /\>/
+ 
 Sleep 5s
