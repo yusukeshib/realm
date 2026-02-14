@@ -110,6 +110,7 @@ box <name>                                        `box create <name>` のショ�
 box create <name> [options] [-- cmd...]           新しいセッションを作成
 box resume <name> [-d] [--docker-args <args>]     既存のセッションを再開
 box stop <name>                                   実行中のセッションを停止
+box exec <name> -- <cmd...>                       実行中のセッションでコマンドを実行
 box remove <name>                                 セッションを削除
 box path <name>                                   ワークスペースパスを表示
 box config zsh|bash                               シェル補完を出力
@@ -162,6 +163,16 @@ box resume my-feature
 box resume my-feature -d
 
 # 停止せずにデタッチ: Ctrl+P, Ctrl+Q
+```
+
+### 実行中のセッションでコマンドを実行
+
+```bash
+# 実行中のセッションでコマンドを実行
+box exec my-feature -- ls -la
+
+# 実行中のセッションでシェルを開く
+box exec my-feature -- bash
 ```
 
 ### 停止と削除

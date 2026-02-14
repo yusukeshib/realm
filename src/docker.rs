@@ -323,6 +323,25 @@ pub fn attach_container(name: &str) -> Result<i32> {
     Ok(status.code().unwrap_or(1))
 }
 
+pub fn exec_container(name: &str, cmd: &[String]) -> Result<i32> {
+    let mut args = vec![
+        "exec".to_string(),
+        "-it".to_string(),
+        format!("box-{}", name),
+    ];
+    args.extend(cmd.iter().cloned());
+
+    let status = Command::new("docker")
+        .args(&args)
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()?;
+    restore_terminal();
+
+    Ok(status.code().unwrap_or(1))
+}
+
 pub fn start_container_detached(name: &str) -> Result<i32> {
     let status = Command::new("docker")
         .args(["start", &format!("box-{}", name)])
