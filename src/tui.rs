@@ -185,14 +185,14 @@ where
 
             // Table
             {
-                let header = Row::new(["NAME", "STATUS", "PROJECT", "IMAGE", "CREATED"])
+                let header = Row::new(["NAME", "STATUS", "PROJECT", "IMAGE", "CMD", "CREATED"])
                     .style(Style::default().dim());
 
                 let total_rows = 1 + items.len(); // "new session" + actual sessions
                 let mut rows: Vec<Row> = Vec::with_capacity(total_rows);
 
                 // First row: "+ new session"
-                rows.push(Row::new(["New box...", "", "", "", ""]));
+                rows.push(Row::new(["New box...", "", "", "", "", ""]));
 
                 // Session rows
                 for (i, s) in items.iter().enumerate() {
@@ -202,6 +202,7 @@ where
                         status,
                         s.project_dir.as_str(),
                         s.image.as_str(),
+                        s.command.as_str(),
                         s.created_at.as_str(),
                     ]);
                     let row_idx = i + 1; // offset by "new session" row
@@ -217,6 +218,7 @@ where
                     Constraint::Min(10),
                     Constraint::Min(30),
                     Constraint::Min(20),
+                    Constraint::Min(15),
                     Constraint::Min(22),
                 ];
 

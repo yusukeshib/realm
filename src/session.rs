@@ -35,6 +35,7 @@ pub struct SessionSummary {
     pub name: String,
     pub project_dir: String,
     pub image: String,
+    pub command: String,
     pub created_at: String,
     pub running: bool,
 }
@@ -184,11 +185,20 @@ pub fn list() -> Result<Vec<SessionSummary>> {
         let created_at = fs::read_to_string(session_path.join("created_at"))
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
+        let command = fs::read_to_string(session_path.join("command"))
+            .map(|s| {
+                s.split('\0')
+                    .filter(|l| !l.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default();
 
         sessions.push(SessionSummary {
             name,
             project_dir,
             image,
+            command,
             created_at,
             running: false,
         });
