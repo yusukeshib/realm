@@ -21,7 +21,7 @@ Sleep 1s
 
 # ── 2. Create a new session ────────────────────────────────────
 
-# "New realm..." is already selected, press Enter
+# "New box..." is already selected, press Enter
 Enter
 Sleep 500ms
 

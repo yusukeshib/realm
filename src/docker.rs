@@ -335,7 +335,7 @@ pub fn start_container_detached(name: &str) -> Result<i32> {
 
 pub fn stop_container(name: &str) -> Result<i32> {
     let status = Command::new("docker")
-        .args(["stop", &format!("realm-{}", name)])
+        .args(["stop", &format!("box-{}", name)])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::inherit())
         .status()?;

@@ -1,10 +1,10 @@
 #!/bin/bash
 # box installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/yusukeshib/realm/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/yusukeshib/box/main/install.sh | bash
 
 set -e
 
-REPO="yusukeshib/realm"
+REPO="yusukeshib/box"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 detect_platform() {

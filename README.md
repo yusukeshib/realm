@@ -4,7 +4,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/box-cli)](https://crates.io/crates/box-cli)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/yusukeshib/realm/actions/workflows/ci.yml/badge.svg)](https://github.com/yusukeshib/realm/actions/workflows/ci.yml)
+[![CI](https://github.com/yusukeshib/box/actions/workflows/ci.yml/badge.svg)](https://github.com/yusukeshib/box/actions/workflows/ci.yml)
 
 Safe, disposable dev environments for AI coding agents — powered by Docker and git.
 
@@ -30,7 +30,7 @@ AI coding agents (Claude Code, Cursor, Copilot) are powerful — but letting the
 ### Quick install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yusukeshib/realm/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yusukeshib/box/main/install.sh | bash
 ```
 
 ### From crates.io
@@ -42,18 +42,18 @@ cargo install box-cli
 ### From source
 
 ```bash
-cargo install --git https://github.com/yusukeshib/realm
+cargo install --git https://github.com/yusukeshib/box
 ```
 
 ### Nix
 
 ```bash
-nix run github:yusukeshib/realm
+nix run github:yusukeshib/box
 ```
 
 ### Binary download
 
-Pre-built binaries are available on the [GitHub Releases](https://github.com/yusukeshib/realm/releases) page.
+Pre-built binaries are available on the [GitHub Releases](https://github.com/yusukeshib/box/releases) page.
 
 ## Quick Start
 

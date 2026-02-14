@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn test_derive_mount_path_normal() {
-        assert_eq!(derive_mount_path("/home/user/realm"), "/workspace/realm");
+        assert_eq!(derive_mount_path("/home/user/myapp"), "/workspace/myapp");
     }
 
     #[test]
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_derive_mount_path_trailing_slash() {
-        assert_eq!(derive_mount_path("/home/user/realm/"), "/workspace/realm");
+        assert_eq!(derive_mount_path("/home/user/myapp/"), "/workspace/myapp");
     }
 
     #[test]

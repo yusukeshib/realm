@@ -4,7 +4,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/box-cli)](https://crates.io/crates/box-cli)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/yusukeshib/realm/actions/workflows/ci.yml/badge.svg)](https://github.com/yusukeshib/realm/actions/workflows/ci.yml)
+[![CI](https://github.com/yusukeshib/box/actions/workflows/ci.yml/badge.svg)](https://github.com/yusukeshib/box/actions/workflows/ci.yml)
 
 AIコーディングエージェントのための安全で使い捨て可能な開発環境 — DockerとGitで動作。
 
@@ -30,7 +30,7 @@ AIコーディングエージェント（Claude Code、Cursor、Copilot）は強
 ### クイックインストール
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yusukeshib/realm/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yusukeshib/box/main/install.sh | bash
 ```
 
 ### crates.ioから
@@ -42,18 +42,18 @@ cargo install box-cli
 ### ソースから
 
 ```bash
-cargo install --git https://github.com/yusukeshib/realm
+cargo install --git https://github.com/yusukeshib/box
 ```
 
 ### Nix
 
 ```bash
-nix run github:yusukeshib/realm
+nix run github:yusukeshib/box
 ```
 
 ### バイナリダウンロード
 
-ビルド済みバイナリは[GitHub Releases](https://github.com/yusukeshib/realm/releases)ページからダウンロードできます。
+ビルド済みバイナリは[GitHub Releases](https://github.com/yusukeshib/box/releases)ページからダウンロードできます。
 
 ## クイックスタート
 

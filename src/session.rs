@@ -317,7 +317,7 @@ mod tests {
             let sess = Session {
                 name: "full-session".to_string(),
                 project_dir: "/tmp/project".to_string(),
-                image: "realm-full:latest".to_string(),
+                image: "box-full:latest".to_string(),
                 mount_path: "/src".to_string(),
                 command: vec![
                     "bash".to_string(),
