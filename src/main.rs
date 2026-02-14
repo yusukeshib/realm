@@ -12,9 +12,9 @@ use std::path::Path;
 
 #[derive(Parser)]
 #[command(
-    name = "realm",
+    name = "box",
     about = "Sandboxed Docker environments for git repos",
-    after_help = "Examples:\n  realm                                         # interactive session manager\n  realm create my-feature                        # create a new session\n  realm create my-feature --image ubuntu -- bash # create with options\n  realm resume my-feature                        # resume a session\n  realm resume my-feature -d                     # resume in background\n  realm stop my-feature                          # stop a running session\n  realm remove my-feature                        # remove a session\n  realm path my-feature                          # print workspace path\n  realm upgrade                                  # self-update"
+    after_help = "Examples:\n  box                                         # interactive session manager\n  box create my-feature                        # create a new session\n  box create my-feature --image ubuntu -- bash # create with options\n  box resume my-feature                        # resume a session\n  box resume my-feature -d                     # resume in background\n  box stop my-feature                          # stop a running session\n  box remove my-feature                        # remove a session\n  box path my-feature                          # print workspace path\n  box upgrade                                  # self-update"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -38,7 +38,7 @@ enum Commands {
     },
     /// Self-update to the latest version
     Upgrade,
-    /// Output shell configuration (e.g. eval "$(realm config zsh)")
+    /// Output shell configuration (e.g. eval "$(box config zsh)")
     Config {
         #[command(subcommand)]
         shell: ConfigShell,
@@ -54,12 +54,12 @@ struct CreateArgs {
     #[arg(short = 'd')]
     detach: bool,
 
-    /// Docker image to use (default: $REALM_DEFAULT_IMAGE or alpine:latest)
+    /// Docker image to use (default: $BOX_DEFAULT_IMAGE or alpine:latest)
     #[arg(long)]
     image: Option<String>,
 
     /// Extra Docker flags (e.g. -e KEY=VALUE, -v /host:/container, --network host).
-    /// Overrides $REALM_DOCKER_ARGS when provided.
+    /// Overrides $BOX_DOCKER_ARGS when provided.
     #[arg(long = "docker-args", allow_hyphen_values = true)]
     docker_args: Option<String>,
 
@@ -67,7 +67,7 @@ struct CreateArgs {
     #[arg(long = "no-ssh")]
     no_ssh: bool,
 
-    /// Command to run in container (default: $REALM_DEFAULT_CMD if set)
+    /// Command to run in container (default: $BOX_DEFAULT_CMD if set)
     #[arg(last = true)]
     cmd: Vec<String>,
 }
@@ -82,7 +82,7 @@ struct ResumeArgs {
     detach: bool,
 
     /// Extra Docker flags (e.g. -e KEY=VALUE, -v /host:/container, --network host).
-    /// Overrides $REALM_DOCKER_ARGS when provided.
+    /// Overrides $BOX_DOCKER_ARGS when provided.
     #[arg(long = "docker-args", allow_hyphen_values = true)]
     docker_args: Option<String>,
 }
@@ -114,7 +114,7 @@ fn main() {
         Some(Commands::Create(args)) => {
             let docker_args = args
                 .docker_args
-                .or_else(|| std::env::var("REALM_DOCKER_ARGS").ok())
+                .or_else(|| std::env::var("BOX_DOCKER_ARGS").ok())
                 .unwrap_or_default();
             let cmd = if args.cmd.is_empty() {
                 None
@@ -133,7 +133,7 @@ fn main() {
         Some(Commands::Resume(args)) => {
             let docker_args = args
                 .docker_args
-                .or_else(|| std::env::var("REALM_DOCKER_ARGS").ok())
+                .or_else(|| std::env::var("BOX_DOCKER_ARGS").ok())
                 .unwrap_or_default();
             cmd_resume(&args.name, &docker_args, args.detach)
         }
@@ -173,7 +173,7 @@ fn cmd_list() -> Result<i32> {
         Ok(())
     };
 
-    let docker_args = std::env::var("REALM_DOCKER_ARGS").unwrap_or_default();
+    let docker_args = std::env::var("BOX_DOCKER_ARGS").unwrap_or_default();
 
     match tui::session_manager(&sessions, delete_fn)? {
         tui::TuiAction::Resume(name) => cmd_resume(&name, &docker_args, false),
@@ -198,7 +198,7 @@ fn cmd_create(
 
     if session::session_exists(name)? {
         bail!(
-            "Session '{}' already exists. Use `realm resume {}` to resume it.",
+            "Session '{}' already exists. Use `box resume {}` to resume it.",
             name,
             name
         );
@@ -214,7 +214,7 @@ fn cmd_create(
 
     docker::check()?;
 
-    let cfg = config::resolve(config::RealmConfigInput {
+    let cfg = config::resolve(config::BoxConfigInput {
         name: name.to_string(),
         image,
         mount_path: None,
@@ -312,7 +312,7 @@ fn cmd_remove(name: &str) -> Result<i32> {
 
     if docker::container_is_running(name) {
         bail!(
-            "Session '{}' is still running. Stop it first with `realm stop {}`.",
+            "Session '{}' is still running. Stop it first with `box stop {}`.",
             name,
             name
         );
@@ -348,23 +348,20 @@ fn cmd_path(name: &str) -> Result<i32> {
         bail!("Session '{}' not found.", name);
     }
     let home = config::home_dir()?;
-    let path = Path::new(&home)
-        .join(".realm")
-        .join("workspaces")
-        .join(name);
+    let path = Path::new(&home).join(".box").join("workspaces").join(name);
     println!("{}", path.display());
     Ok(0)
 }
 
 fn cmd_config_zsh() -> Result<i32> {
     print!(
-        r#"__realm_sessions() {{
+        r#"__box_sessions() {{
     local -a sessions
-    if [[ -d "$HOME/.realm/sessions" ]]; then
-        for s in "$HOME/.realm/sessions"/*(N:t); do
+    if [[ -d "$HOME/.box/sessions" ]]; then
+        for s in "$HOME/.box/sessions"/*(N:t); do
             local desc=""
-            if [[ -f "$HOME/.realm/sessions/$s/project_dir" ]]; then
-                desc=$(< "$HOME/.realm/sessions/$s/project_dir")
+            if [[ -f "$HOME/.box/sessions/$s/project_dir" ]]; then
+                desc=$(< "$HOME/.box/sessions/$s/project_dir")
                 desc=${{desc/#$HOME/\~}}
             fi
             sessions+=("$s:[$desc]")
@@ -375,7 +372,7 @@ fn cmd_config_zsh() -> Result<i32> {
     fi
 }}
 
-_realm() {{
+_box() {{
     local curcontext="$curcontext" state line
     typeset -A opt_args
 
@@ -412,11 +409,11 @@ _realm() {{
                     _arguments \
                         '-d[Run container in the background]' \
                         '--docker-args=[Extra Docker flags]:args' \
-                        '1:session name:__realm_sessions'
+                        '1:session name:__box_sessions'
                     ;;
                 remove|stop|path)
                     if (( CURRENT == 2 )); then
-                        __realm_sessions
+                        __box_sessions
                     fi
                     ;;
                 config)
@@ -430,7 +427,7 @@ _realm() {{
             ;;
     esac
 }}
-compdef _realm realm
+compdef _box box
 "#
     );
     Ok(0)
@@ -438,7 +435,7 @@ compdef _realm realm
 
 fn cmd_config_bash() -> Result<i32> {
     print!(
-        r#"_realm() {{
+        r#"_box() {{
     local cur prev words cword
     _init_completion || return
 
@@ -468,8 +465,8 @@ fn cmd_config_bash() -> Result<i32> {
                 *)
                     if [[ $cword -eq 2 ]]; then
                         local sessions=""
-                        if [[ -d "$HOME/.realm/sessions" ]]; then
-                            sessions=$(command ls "$HOME/.realm/sessions" 2>/dev/null)
+                        if [[ -d "$HOME/.box/sessions" ]]; then
+                            sessions=$(command ls "$HOME/.box/sessions" 2>/dev/null)
                         fi
                         COMPREPLY=($(compgen -W "$sessions" -- "$cur"))
                     fi
@@ -479,8 +476,8 @@ fn cmd_config_bash() -> Result<i32> {
         remove|stop|path)
             if [[ $cword -eq 2 ]]; then
                 local sessions=""
-                if [[ -d "$HOME/.realm/sessions" ]]; then
-                    sessions=$(command ls "$HOME/.realm/sessions" 2>/dev/null)
+                if [[ -d "$HOME/.box/sessions" ]]; then
+                    sessions=$(command ls "$HOME/.box/sessions" 2>/dev/null)
                 fi
                 COMPREPLY=($(compgen -W "$sessions" -- "$cur"))
             fi
@@ -492,7 +489,7 @@ fn cmd_config_bash() -> Result<i32> {
             ;;
     esac
 }}
-complete -F _realm realm
+complete -F _box box
 "#
     );
     Ok(0)
@@ -505,7 +502,7 @@ fn cmd_upgrade() -> Result<i32> {
     println!("Checking for updates...");
     let releases = self_update::backends::github::ReleaseList::configure()
         .repo_owner("yusukeshib")
-        .repo_name("realm")
+        .repo_name("box")
         .build()
         .map_err(|e| anyhow::anyhow!("Failed to build release list: {}", e))?
         .fetch()
@@ -541,7 +538,7 @@ fn cmd_upgrade() -> Result<i32> {
     }
 
     let download_url = format!(
-        "https://github.com/yusukeshib/realm/releases/download/v{}/{}",
+        "https://github.com/yusukeshib/box/releases/download/v{}/{}",
         latest_version, asset_name
     );
 
@@ -554,7 +551,7 @@ fn cmd_upgrade() -> Result<i32> {
         let msg = e.to_string();
         if msg.to_lowercase().contains("permission denied") {
             anyhow::anyhow!(
-                "Permission denied. Try running with elevated privileges (e.g., sudo realm upgrade)."
+                "Permission denied. Try running with elevated privileges (e.g., sudo box upgrade)."
             )
         } else {
             anyhow::anyhow!("{}", msg)
@@ -581,11 +578,11 @@ fn upgrade_asset_name() -> Result<String> {
         "linux" => "linux",
         other => bail!("Unsupported platform: {}", other),
     };
-    Ok(format!("realm-{}-{}", arch, os_name))
+    Ok(format!("box-{}-{}", arch, os_name))
 }
 
 fn upgrade_download(url: &str) -> Result<std::path::PathBuf> {
-    let tmp_path = std::env::temp_dir().join(format!("realm-update-{}", std::process::id()));
+    let tmp_path = std::env::temp_dir().join(format!("box-update-{}", std::process::id()));
     let mut tmp_file = fs::File::create(&tmp_path)?;
 
     self_update::Download::from_url(url)
@@ -612,13 +609,13 @@ mod tests {
     use clap::Parser;
 
     fn parse(args: &[&str]) -> Cli {
-        let mut full_args = vec!["realm"];
+        let mut full_args = vec!["box"];
         full_args.extend_from_slice(args);
         Cli::try_parse_from(full_args).unwrap()
     }
 
     fn try_parse(args: &[&str]) -> Result<Cli, clap::Error> {
-        let mut full_args = vec!["realm"];
+        let mut full_args = vec!["box"];
         full_args.extend_from_slice(args);
         Cli::try_parse_from(full_args)
     }

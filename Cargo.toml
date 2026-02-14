@@ -1,13 +1,13 @@
 [package]
-name = "realm-cli"
-version = "0.0.35"
+name = "box-cli"
+version = "0.0.1"
 edition = "2021"
 description = "Sandboxed Docker environments for git repos"
 license = "MIT"
-repository = "https://github.com/yusukeshib/realm"
+repository = "https://github.com/yusukeshib/box"
 
 [[bin]]
-name = "realm"
+name = "box"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,5 +1,5 @@
 #!/bin/bash
-# realm installer
+# box installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/yusukeshib/realm/main/install.sh | bash
 
 set -e
@@ -30,7 +30,7 @@ detect_platform() {
             ;;
     esac
 
-    echo "realm-${arch}-${os}"
+    echo "box-${arch}-${os}"
 }
 
 get_latest_tag() {
@@ -57,36 +57,36 @@ install_binary() {
     trap 'rm -rf "$tmpdir"' EXIT
 
     echo "Downloading ${url}..."
-    if ! curl -fsSL -o "${tmpdir}/realm" "$url"; then
+    if ! curl -fsSL -o "${tmpdir}/box" "$url"; then
         echo "Binary download failed" >&2
         return 1
     fi
 
-    chmod +x "${tmpdir}/realm"
+    chmod +x "${tmpdir}/box"
 
     mkdir -p "$INSTALL_DIR"
-    mv "${tmpdir}/realm" "${INSTALL_DIR}/realm"
+    mv "${tmpdir}/box" "${INSTALL_DIR}/box"
 
-    echo "Installed realm to ${INSTALL_DIR}/realm"
+    echo "Installed box to ${INSTALL_DIR}/box"
 }
 
 install_cargo() {
     if ! command -v cargo &>/dev/null; then
         return 1
     fi
-    echo "Installing realm via cargo..."
-    cargo install realm-cli
+    echo "Installing box via cargo..."
+    cargo install box-cli
 }
 
 install_nix() {
     if ! command -v nix &>/dev/null; then
         return 1
     fi
-    echo "Installing realm via nix..."
+    echo "Installing box via nix..."
     nix profile install "github:${REPO}"
 }
 
-echo "Installing realm..."
+echo "Installing box..."
 
 if install_binary; then
     echo ""
@@ -104,7 +104,7 @@ elif install_nix; then
     echo "Done!"
 else
     echo ""
-    echo "Error: Could not install realm." >&2
+    echo "Error: Could not install box." >&2
     echo "Install one of the following and try again:" >&2
     echo "  - cargo: https://rustup.rs/" >&2
     echo "  - nix:   https://nixos.org/download/" >&2
@@ -113,6 +113,6 @@ fi
 
 echo ""
 echo "Try it out:"
-echo "  cd ~/your-git-repo && realm my-session -c"
-echo "  realm my-session -c --image ubuntu:latest -- bash"
+echo "  cd ~/your-git-repo && box my-session -c"
+echo "  box my-session -c --image ubuntu:latest -- bash"
 echo ""

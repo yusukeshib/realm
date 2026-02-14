@@ -16,8 +16,8 @@ pub struct Session {
     pub ssh: bool,
 }
 
-impl From<config::RealmConfig> for Session {
-    fn from(cfg: config::RealmConfig) -> Self {
+impl From<config::BoxConfig> for Session {
+    fn from(cfg: config::BoxConfig) -> Self {
         Session {
             name: cfg.name,
             project_dir: cfg.project_dir,
@@ -41,7 +41,7 @@ pub struct SessionSummary {
 
 pub fn sessions_dir() -> Result<PathBuf> {
     Ok(PathBuf::from(config::home_dir()?)
-        .join(".realm")
+        .join(".box")
         .join("sessions"))
 }
 
@@ -284,7 +284,7 @@ mod tests {
     fn test_sessions_dir() {
         with_temp_home(|tmp| {
             let dir = sessions_dir().unwrap();
-            assert_eq!(dir, tmp.join(".realm").join("sessions"));
+            assert_eq!(dir, tmp.join(".box").join("sessions"));
         });
     }
 

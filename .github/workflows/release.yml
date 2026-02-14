@@ -66,16 +66,16 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             os: macos-14
-            asset: realm-aarch64-darwin
+            asset: box-aarch64-darwin
           - target: x86_64-apple-darwin
             os: macos-15-intel
-            asset: realm-x86_64-darwin
+            asset: box-x86_64-darwin
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
-            asset: realm-x86_64-linux
+            asset: box-x86_64-linux
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
-            asset: realm-aarch64-linux
+            asset: box-aarch64-linux
             use_cross: true
     runs-on: ${{ matrix.os }}
     steps:
@@ -99,7 +99,7 @@ jobs:
         if: matrix.use_cross
         run: cross build --release --target ${{ matrix.target }}
       - name: Rename binary
-        run: cp target/${{ matrix.target }}/release/realm ${{ matrix.asset }}
+        run: cp target/${{ matrix.target }}/release/box ${{ matrix.asset }}
       - name: Generate SHA256 checksum
         run: |
           if [[ "$RUNNER_OS" == "macOS" ]]; then

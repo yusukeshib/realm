@@ -1,5 +1,5 @@
 {
-  description = "realm-cli: A command-line interface for Realm, a database for mobile applications.";
+  description = "box-cli: Sandboxed Docker environments for git repos";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -11,9 +11,9 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        realm = pkgs.rustPlatform.buildRustPackage {
-          pname = "realm";
-          version = "0.0.35";
+        box = pkgs.rustPlatform.buildRustPackage {
+          pname = "box";
+          version = "0.0.1";
 
           src = ./.;
 
@@ -30,22 +30,22 @@
           '';
 
           meta = with pkgs.lib; {
-            description = "Homebrew-style wrapper for Nix using flake.nix";
-            homepage = "https://github.com/yusukeshib/realm";
+            description = "Sandboxed Docker environments for git repos";
+            homepage = "https://github.com/yusukeshib/box";
             license = licenses.mit;
             maintainers = [];
-            mainProgram = "realm";
+            mainProgram = "box";
           };
         };
       in
       {
         packages = {
-          default = realm;
-          realm = realm;
+          default = box;
+          box = box;
         };
 
         apps.default = flake-utils.lib.mkApp {
-          drv = realm;
+          drv = box;
         };
 
         devShells.default = pkgs.mkShell {

@@ -12,7 +12,7 @@ pub fn home_dir() -> Result<String> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct RealmConfig {
+pub struct BoxConfig {
     pub name: String,
     pub project_dir: String,
     pub image: String,
@@ -22,7 +22,7 @@ pub struct RealmConfig {
     pub ssh: bool,
 }
 
-pub struct RealmConfigInput {
+pub struct BoxConfigInput {
     pub name: String,
     pub image: Option<String>,
     pub mount_path: Option<String>,
@@ -32,23 +32,23 @@ pub struct RealmConfigInput {
     pub ssh: bool,
 }
 
-pub fn resolve(input: RealmConfigInput) -> Result<RealmConfig> {
+pub fn resolve(input: BoxConfigInput) -> Result<BoxConfig> {
     let mount_path = input
         .mount_path
         .unwrap_or_else(|| derive_mount_path(&input.project_dir));
     let image = input.image.unwrap_or_else(|| {
-        std::env::var("REALM_DEFAULT_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE.to_string())
+        std::env::var("BOX_DEFAULT_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE.to_string())
     });
     let command = match input.command {
-        None => match std::env::var("REALM_DEFAULT_CMD") {
+        None => match std::env::var("BOX_DEFAULT_CMD") {
             Ok(val) if !val.is_empty() => shell_words::split(&val)
-                .map_err(|e| anyhow::anyhow!("Failed to parse REALM_DEFAULT_CMD: {}", e))?,
+                .map_err(|e| anyhow::anyhow!("Failed to parse BOX_DEFAULT_CMD: {}", e))?,
             _ => vec![],
         },
         Some(cmd) => cmd,
     };
 
-    Ok(RealmConfig {
+    Ok(BoxConfig {
         name: input.name,
         project_dir: input.project_dir,
         image,
@@ -109,12 +109,12 @@ mod tests {
     #[test]
     fn test_resolve_defaults() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let saved_image = std::env::var("REALM_DEFAULT_IMAGE").ok();
-        let saved_cmd = std::env::var("REALM_DEFAULT_CMD").ok();
-        std::env::remove_var("REALM_DEFAULT_IMAGE");
-        std::env::remove_var("REALM_DEFAULT_CMD");
+        let saved_image = std::env::var("BOX_DEFAULT_IMAGE").ok();
+        let saved_cmd = std::env::var("BOX_DEFAULT_CMD").ok();
+        std::env::remove_var("BOX_DEFAULT_IMAGE");
+        std::env::remove_var("BOX_DEFAULT_CMD");
 
-        let config = resolve(RealmConfigInput {
+        let config = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: None,
             mount_path: None,
@@ -127,7 +127,7 @@ mod tests {
 
         assert_eq!(
             config,
-            RealmConfig {
+            BoxConfig {
                 name: "test".to_string(),
                 project_dir: "/home/user/myproject".to_string(),
                 image: DEFAULT_IMAGE.to_string(),
@@ -139,18 +139,18 @@ mod tests {
         );
 
         if let Some(v) = saved_image {
-            std::env::set_var("REALM_DEFAULT_IMAGE", v);
+            std::env::set_var("BOX_DEFAULT_IMAGE", v);
         }
         if let Some(v) = saved_cmd {
-            std::env::set_var("REALM_DEFAULT_CMD", v);
+            std::env::set_var("BOX_DEFAULT_CMD", v);
         }
     }
 
     #[test]
     fn test_resolve_mount_override() {
         let _lock = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("REALM_DEFAULT_CMD");
-        let config = resolve(RealmConfigInput {
+        std::env::remove_var("BOX_DEFAULT_CMD");
+        let config = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: None,
             mount_path: Some("/custom".to_string()),
@@ -167,8 +167,8 @@ mod tests {
     #[test]
     fn test_resolve_image_override() {
         let _lock = ENV_LOCK.lock().unwrap();
-        std::env::remove_var("REALM_DEFAULT_CMD");
-        let config = resolve(RealmConfigInput {
+        std::env::remove_var("BOX_DEFAULT_CMD");
+        let config = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: Some("ubuntu:latest".to_string()),
             mount_path: None,
@@ -185,10 +185,10 @@ mod tests {
     #[test]
     fn test_resolve_env_default_image() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let saved_cmd = std::env::var("REALM_DEFAULT_CMD").ok();
-        std::env::remove_var("REALM_DEFAULT_CMD");
-        std::env::set_var("REALM_DEFAULT_IMAGE", "ubuntu:latest");
-        let config = resolve(RealmConfigInput {
+        let saved_cmd = std::env::var("BOX_DEFAULT_CMD").ok();
+        std::env::remove_var("BOX_DEFAULT_CMD");
+        std::env::set_var("BOX_DEFAULT_IMAGE", "ubuntu:latest");
+        let config = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: None,
             mount_path: None,
@@ -199,19 +199,19 @@ mod tests {
         })
         .unwrap();
         assert_eq!(config.image, "ubuntu:latest");
-        std::env::remove_var("REALM_DEFAULT_IMAGE");
+        std::env::remove_var("BOX_DEFAULT_IMAGE");
         if let Some(v) = saved_cmd {
-            std::env::set_var("REALM_DEFAULT_CMD", v);
+            std::env::set_var("BOX_DEFAULT_CMD", v);
         }
     }
 
     #[test]
     fn test_resolve_image_flag_overrides_env() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let saved_cmd = std::env::var("REALM_DEFAULT_CMD").ok();
-        std::env::remove_var("REALM_DEFAULT_CMD");
-        std::env::set_var("REALM_DEFAULT_IMAGE", "ubuntu:latest");
-        let config = resolve(RealmConfigInput {
+        let saved_cmd = std::env::var("BOX_DEFAULT_CMD").ok();
+        std::env::remove_var("BOX_DEFAULT_CMD");
+        std::env::set_var("BOX_DEFAULT_IMAGE", "ubuntu:latest");
+        let config = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: Some("python:3.11".to_string()),
             mount_path: None,
@@ -222,9 +222,9 @@ mod tests {
         })
         .unwrap();
         assert_eq!(config.image, "python:3.11");
-        std::env::remove_var("REALM_DEFAULT_IMAGE");
+        std::env::remove_var("BOX_DEFAULT_IMAGE");
         if let Some(v) = saved_cmd {
-            std::env::set_var("REALM_DEFAULT_CMD", v);
+            std::env::set_var("BOX_DEFAULT_CMD", v);
         }
     }
 
@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn test_resolve_full() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let config = resolve(RealmConfigInput {
+        let config = resolve(BoxConfigInput {
             name: "full".to_string(),
             image: Some("python:3.11".to_string()),
             mount_path: Some("/app".to_string()),
@@ -284,7 +284,7 @@ mod tests {
 
         assert_eq!(
             config,
-            RealmConfig {
+            BoxConfig {
                 name: "full".to_string(),
                 project_dir: "/home/user/project".to_string(),
                 image: "python:3.11".to_string(),
@@ -299,9 +299,9 @@ mod tests {
     #[test]
     fn test_resolve_env_default_cmd() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
-        std::env::set_var("REALM_DEFAULT_CMD", "bash");
-        let config = resolve(RealmConfigInput {
+        let saved = std::env::var("BOX_DEFAULT_CMD").ok();
+        std::env::set_var("BOX_DEFAULT_CMD", "bash");
+        let config = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: None,
             mount_path: None,
@@ -313,17 +313,17 @@ mod tests {
         .unwrap();
         assert_eq!(config.command, vec!["bash".to_string()]);
         match saved {
-            Some(v) => std::env::set_var("REALM_DEFAULT_CMD", v),
-            None => std::env::remove_var("REALM_DEFAULT_CMD"),
+            Some(v) => std::env::set_var("BOX_DEFAULT_CMD", v),
+            None => std::env::remove_var("BOX_DEFAULT_CMD"),
         }
     }
 
     #[test]
     fn test_resolve_cli_cmd_overrides_env() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
-        std::env::set_var("REALM_DEFAULT_CMD", "bash");
-        let config = resolve(RealmConfigInput {
+        let saved = std::env::var("BOX_DEFAULT_CMD").ok();
+        std::env::set_var("BOX_DEFAULT_CMD", "bash");
+        let config = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: None,
             mount_path: None,
@@ -335,17 +335,17 @@ mod tests {
         .unwrap();
         assert_eq!(config.command, vec!["sh".to_string()]);
         match saved {
-            Some(v) => std::env::set_var("REALM_DEFAULT_CMD", v),
-            None => std::env::remove_var("REALM_DEFAULT_CMD"),
+            Some(v) => std::env::set_var("BOX_DEFAULT_CMD", v),
+            None => std::env::remove_var("BOX_DEFAULT_CMD"),
         }
     }
 
     #[test]
     fn test_resolve_env_default_cmd_multi_word() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
-        std::env::set_var("REALM_DEFAULT_CMD", "bash -c 'echo hello'");
-        let config = resolve(RealmConfigInput {
+        let saved = std::env::var("BOX_DEFAULT_CMD").ok();
+        std::env::set_var("BOX_DEFAULT_CMD", "bash -c 'echo hello'");
+        let config = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: None,
             mount_path: None,
@@ -364,17 +364,17 @@ mod tests {
             ]
         );
         match saved {
-            Some(v) => std::env::set_var("REALM_DEFAULT_CMD", v),
-            None => std::env::remove_var("REALM_DEFAULT_CMD"),
+            Some(v) => std::env::set_var("BOX_DEFAULT_CMD", v),
+            None => std::env::remove_var("BOX_DEFAULT_CMD"),
         }
     }
 
     #[test]
     fn test_resolve_env_default_cmd_empty() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
-        std::env::set_var("REALM_DEFAULT_CMD", "");
-        let config = resolve(RealmConfigInput {
+        let saved = std::env::var("BOX_DEFAULT_CMD").ok();
+        std::env::set_var("BOX_DEFAULT_CMD", "");
+        let config = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: None,
             mount_path: None,
@@ -386,17 +386,17 @@ mod tests {
         .unwrap();
         assert_eq!(config.command, Vec::<String>::new());
         match saved {
-            Some(v) => std::env::set_var("REALM_DEFAULT_CMD", v),
-            None => std::env::remove_var("REALM_DEFAULT_CMD"),
+            Some(v) => std::env::set_var("BOX_DEFAULT_CMD", v),
+            None => std::env::remove_var("BOX_DEFAULT_CMD"),
         }
     }
 
     #[test]
     fn test_resolve_env_default_cmd_invalid_parse() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
-        std::env::set_var("REALM_DEFAULT_CMD", "bash -c 'unclosed");
-        let result = resolve(RealmConfigInput {
+        let saved = std::env::var("BOX_DEFAULT_CMD").ok();
+        std::env::set_var("BOX_DEFAULT_CMD", "bash -c 'unclosed");
+        let result = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: None,
             mount_path: None,
@@ -406,22 +406,19 @@ mod tests {
             ssh: false,
         });
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("REALM_DEFAULT_CMD"));
+        assert!(result.unwrap_err().to_string().contains("BOX_DEFAULT_CMD"));
         match saved {
-            Some(v) => std::env::set_var("REALM_DEFAULT_CMD", v),
-            None => std::env::remove_var("REALM_DEFAULT_CMD"),
+            Some(v) => std::env::set_var("BOX_DEFAULT_CMD", v),
+            None => std::env::remove_var("BOX_DEFAULT_CMD"),
         }
     }
 
     #[test]
     fn test_resolve_env_default_cmd_unset() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
-        std::env::remove_var("REALM_DEFAULT_CMD");
-        let config = resolve(RealmConfigInput {
+        let saved = std::env::var("BOX_DEFAULT_CMD").ok();
+        std::env::remove_var("BOX_DEFAULT_CMD");
+        let config = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: None,
             mount_path: None,
@@ -433,16 +430,16 @@ mod tests {
         .unwrap();
         assert_eq!(config.command, Vec::<String>::new());
         if let Some(v) = saved {
-            std::env::set_var("REALM_DEFAULT_CMD", v);
+            std::env::set_var("BOX_DEFAULT_CMD", v);
         }
     }
 
     #[test]
     fn test_resolve_explicit_empty_command_skips_default() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let saved = std::env::var("REALM_DEFAULT_CMD").ok();
-        std::env::set_var("REALM_DEFAULT_CMD", "bash");
-        let config = resolve(RealmConfigInput {
+        let saved = std::env::var("BOX_DEFAULT_CMD").ok();
+        std::env::set_var("BOX_DEFAULT_CMD", "bash");
+        let config = resolve(BoxConfigInput {
             name: "test".to_string(),
             image: None,
             mount_path: None,
@@ -454,8 +451,8 @@ mod tests {
         .unwrap();
         assert_eq!(config.command, Vec::<String>::new());
         match saved {
-            Some(v) => std::env::set_var("REALM_DEFAULT_CMD", v),
-            None => std::env::remove_var("REALM_DEFAULT_CMD"),
+            Some(v) => std::env::set_var("BOX_DEFAULT_CMD", v),
+            None => std::env::remove_var("BOX_DEFAULT_CMD"),
         }
     }
 }

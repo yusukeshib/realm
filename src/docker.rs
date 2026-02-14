@@ -9,7 +9,7 @@ use crate::config;
 /// On first run, clones the project repo via `git clone --local`.
 /// Returns the host path. The directory is writable by the owner and group so container users with the appropriate group can write.
 pub fn ensure_workspace(home: &str, name: &str, project_dir: &str) -> Result<String> {
-    let dir_path = Path::new(home).join(".realm").join("workspaces").join(name);
+    let dir_path = Path::new(home).join(".box").join("workspaces").join(name);
     let dir = dir_path.to_string_lossy().to_string();
     let git_dir = dir_path.join(".git");
 
@@ -52,10 +52,7 @@ pub fn ensure_workspace(home: &str, name: &str, project_dir: &str) -> Result<Str
 /// Remove the workspace directory for a session.
 pub fn remove_workspace(name: &str) {
     if let Ok(home) = config::home_dir() {
-        let dir = Path::new(&home)
-            .join(".realm")
-            .join("workspaces")
-            .join(name);
+        let dir = Path::new(&home).join(".box").join("workspaces").join(name);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
@@ -159,7 +156,7 @@ pub struct DockerRunConfig<'a> {
 /// Build the docker run argument list without executing. Used by run_container and tests.
 pub fn build_run_args(cfg: &DockerRunConfig) -> Result<Vec<String>> {
     let workspace_dir = Path::new(cfg.home)
-        .join(".realm")
+        .join(".box")
         .join("workspaces")
         .join(cfg.name);
     let workspace_dir = workspace_dir.to_string_lossy();
@@ -168,9 +165,9 @@ pub fn build_run_args(cfg: &DockerRunConfig) -> Result<Vec<String>> {
         "run".into(),
         interactive_flag.into(),
         "--name".into(),
-        format!("realm-{}", cfg.name),
+        format!("box-{}", cfg.name),
         "--hostname".into(),
-        format!("realm-{}", cfg.name),
+        format!("box-{}", cfg.name),
         "-v".into(),
         format!("{}:{}", workspace_dir, cfg.mount_path),
         "-w".into(),
@@ -234,7 +231,7 @@ pub fn run_container(cfg: &DockerRunConfig) -> Result<i32> {
         }
         let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
         println!("{}", container_id);
-        println!("Run `realm {}` to attach.", cfg.name);
+        println!("Run `box {}` to attach.", cfg.name);
         Ok(0)
     } else {
         let status = Command::new("docker")
@@ -250,7 +247,7 @@ pub fn run_container(cfg: &DockerRunConfig) -> Result<i32> {
 
 pub fn container_exists(name: &str) -> bool {
     Command::new("docker")
-        .args(["container", "inspect", &format!("realm-{}", name)])
+        .args(["container", "inspect", &format!("box-{}", name)])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -265,7 +262,7 @@ pub fn container_is_running(name: &str) -> bool {
             "inspect",
             "-f",
             "{{.State.Running}}",
-            &format!("realm-{}", name),
+            &format!("box-{}", name),
         ])
         .stderr(std::process::Stdio::null())
         .output();
@@ -278,13 +275,13 @@ pub fn container_is_running(name: &str) -> bool {
 /// Return the set of session names whose containers are currently running.
 pub fn running_sessions() -> std::collections::HashSet<String> {
     let output = Command::new("docker")
-        .args(["ps", "--filter", "name=realm-", "--format", "{{.Names}}"])
+        .args(["ps", "--filter", "name=box-", "--format", "{{.Names}}"])
         .stderr(std::process::Stdio::null())
         .output();
     match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
             .lines()
-            .filter_map(|line| line.strip_prefix("realm-"))
+            .filter_map(|line| line.strip_prefix("box-"))
             .map(|s| s.to_string())
             .collect(),
         _ => std::collections::HashSet::new(),
@@ -296,7 +293,7 @@ pub fn start_container(name: &str) -> Result<i32> {
     // This avoids the PTY size race condition that `docker start -ai` has,
     // where the terminal inside may not receive the correct dimensions.
     let status = Command::new("docker")
-        .args(["start", &format!("realm-{}", name)])
+        .args(["start", &format!("box-{}", name)])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::inherit())
         .status()?;
@@ -310,7 +307,7 @@ pub fn start_container(name: &str) -> Result<i32> {
 
 pub fn attach_container(name: &str) -> Result<i32> {
     let status = Command::new("docker")
-        .args(["attach", &format!("realm-{}", name)])
+        .args(["attach", &format!("box-{}", name)])
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
@@ -322,14 +319,14 @@ pub fn attach_container(name: &str) -> Result<i32> {
 
 pub fn start_container_detached(name: &str) -> Result<i32> {
     let status = Command::new("docker")
-        .args(["start", &format!("realm-{}", name)])
+        .args(["start", &format!("box-{}", name)])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::inherit())
         .status()?;
 
     if status.success() {
-        println!("Container realm-{} started in background.", name);
-        println!("Run `realm {}` to attach.", name);
+        println!("Container box-{} started in background.", name);
+        println!("Run `box {}` to attach.", name);
         Ok(0)
     } else {
         Ok(status.code().unwrap_or(1))
@@ -353,7 +350,7 @@ pub fn stop_container(name: &str) -> Result<i32> {
 
 pub fn remove_container(name: &str) {
     let _ = Command::new("docker")
-        .args(["rm", "-f", &format!("realm-{}", name)])
+        .args(["rm", "-f", &format!("box-{}", name)])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
@@ -389,13 +386,13 @@ mod tests {
         assert_eq!(args[0], "run");
         assert_eq!(args[1], "-it");
         assert_eq!(args[2], "--name");
-        assert_eq!(args[3], "realm-test-session");
+        assert_eq!(args[3], "box-test-session");
         assert_eq!(args[4], "--hostname");
-        assert_eq!(args[5], "realm-test-session");
+        assert_eq!(args[5], "box-test-session");
         assert_eq!(args[6], "-v");
         assert_eq!(
             args[7],
-            "/home/user/.realm/workspaces/test-session:/workspace"
+            "/home/user/.box/workspaces/test-session:/workspace"
         );
         assert_eq!(args[8], "-w");
         assert_eq!(args[9], "/workspace");
@@ -497,7 +494,7 @@ mod tests {
         })
         .unwrap();
 
-        assert!(args.contains(&"/home/user/.realm/workspaces/sess:/src".to_string()));
+        assert!(args.contains(&"/home/user/.box/workspaces/sess:/src".to_string()));
         assert!(args.contains(&"/src".to_string()));
     }
 
@@ -509,7 +506,7 @@ mod tests {
         })
         .unwrap();
 
-        assert!(args.contains(&"realm-my-session".to_string()));
+        assert!(args.contains(&"box-my-session".to_string()));
     }
 
     #[test]
@@ -528,7 +525,7 @@ mod tests {
         .unwrap();
 
         let name_pos = args.iter().position(|a| a == "--name").unwrap();
-        assert_eq!(args[name_pos + 1], "realm-my-session");
+        assert_eq!(args[name_pos + 1], "box-my-session");
     }
 
     #[test]

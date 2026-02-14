@@ -192,7 +192,7 @@ where
                 let mut rows: Vec<Row> = Vec::with_capacity(total_rows);
 
                 // First row: "+ new session"
-                rows.push(Row::new(["New realm...", "", "", "", ""]));
+                rows.push(Row::new(["New box...", "", "", "", ""]));
 
                 // Session rows
                 for (i, s) in items.iter().enumerate() {
@@ -355,7 +355,7 @@ where
                             input = TextInput::new();
                         } else {
                             new_name = name;
-                            let default_image = std::env::var("REALM_DEFAULT_IMAGE")
+                            let default_image = std::env::var("BOX_DEFAULT_IMAGE")
                                 .unwrap_or_else(|_| config::DEFAULT_IMAGE.to_string());
                             input = TextInput::with_text(default_image);
                             mode = Mode::InputImage;
@@ -376,7 +376,7 @@ where
                         } else {
                             Some(image_text)
                         };
-                        let default_cmd = std::env::var("REALM_DEFAULT_CMD").unwrap_or_default();
+                        let default_cmd = std::env::var("BOX_DEFAULT_CMD").unwrap_or_default();
                         input = TextInput::with_text(default_cmd);
                         mode = Mode::InputCommand;
                     }
