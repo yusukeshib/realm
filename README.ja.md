@@ -58,7 +58,7 @@ nix run github:yusukeshib/box
 ## クイックスタート
 
 ```bash
-box my-feature --image ubuntu:latest -- bash
+box create my-feature --image ubuntu:latest -- bash
 # gitアクセス可能な隔離コンテナの中にいます
 ```
 
@@ -96,9 +96,9 @@ export BOX_DEFAULT_CMD="bash"               # 新規セッションのデフォ�
 
 ```bash
 # これだけです。以降は:
-box feature-1
-box bugfix-auth
-box experiment-v2
+box create feature-1
+box create bugfix-auth
+box create experiment-v2
 # それぞれが完全なツールチェーンを持つ隔離サンドボックスになります。
 ```
 
@@ -106,10 +106,12 @@ box experiment-v2
 
 ```bash
 box                                               セッションマネージャー（TUI）
-box <name> [options] [-- cmd...]                  セッションの作成または再開
-box <name> -d [-- cmd...]                         バックグラウンドで実行（デタッチ）
-box <name>                                        実行中のセッションにアタッチ
-box config zsh|bash                                シェル補完を出力
+box create <name> [options] [-- cmd...]           新しいセッションを作成
+box resume <name> [-d] [--docker-args <args>]     既存のセッションを再開
+box stop <name>                                   実行中のセッションを停止
+box remove <name>                                 セッションを削除
+box path <name>                                   ワークスペースパスを表示
+box config zsh|bash                               シェル補完を出力
 box upgrade                                       最新版にアップグレード
 ```
 
@@ -130,45 +132,62 @@ box upgrade                                       最新版にアップグレー
 - **d** でハイライト中のセッションを削除（確認あり）
 - **q** / **Esc** で終了
 
-### セッションの作成または再開
+### セッションの作成
 
 ```bash
-# デフォルト: alpine:latest イメージ、sh シェル、カレントディレクトリ
-box my-feature
+# デフォルト: alpine:latest イメージ、カレントディレクトリ
+box create my-feature
 
-# カスタムイメージでbashを使用（作成時のみ有効）
-box my-feature --image ubuntu:latest -- bash
+# カスタムイメージでbashを使用
+box create my-feature --image ubuntu:latest -- bash
 
 # 追加のDockerフラグ（環境変数、ボリューム、ネットワークなど）
-box my-feature --docker-args "-e KEY=VALUE -v /host:/container --network host"
+box create my-feature --docker-args "-e KEY=VALUE -v /host:/container --network host"
 
-# セッションが存在すれば元の設定で再開
-# 存在しなければ新規作成
-box my-feature
+# デタッチモードで作成（バックグラウンド）
+box create my-feature -d -- claude -p "do something"
 ```
 
-セッションが存在しない場合は自動的に作成されます。既存のセッションを再開する場合、`--image` などの作成時オプションは無視されます。`--docker-args` や `--no-ssh` などのランタイムオプションは毎回適用されます。
-
-### デタッチモード
+### セッションの再開
 
 ```bash
-# バックグラウンドで実行
-box my-feature -d -- claude -p "do something"
+# 既存のセッションを再開
+box resume my-feature
 
-# 実行中のセッションにアタッチ
-box my-feature
+# デタッチモードで再開
+box resume my-feature -d
 
 # 停止せずにデタッチ: Ctrl+P, Ctrl+Q
 ```
 
+### 停止と削除
+
+```bash
+# 実行中のセッションを停止
+box stop my-feature
+
+# 停止したセッションを削除（コンテナ、ワークスペース、セッションデータ）
+box remove my-feature
+```
+
 ## オプション
+
+### `box create`
 
 | オプション | 説明 |
 |--------|-------------|
 | `-d` | バックグラウンドでコンテナを実行（デタッチ） |
-| `--image <image>` | 使用するDockerイメージ（デフォルト: `alpine:latest`）- 作成時のみ有効 |
+| `--image <image>` | 使用するDockerイメージ（デフォルト: `alpine:latest`） |
 | `--docker-args <args>` | 追加のDockerフラグ（例: `-e KEY=VALUE`、`-v /host:/container`）。`$BOX_DOCKER_ARGS` を上書き |
 | `--no-ssh` | SSHエージェント転送を無効化（デフォルトは有効） |
+| `-- cmd...` | コンテナで実行するコマンド（デフォルト: `$BOX_DEFAULT_CMD` が設定されている場合はそれを使用） |
+
+### `box resume`
+
+| オプション | 説明 |
+|--------|-------------|
+| `-d` | バックグラウンドで再開（デタッチ） |
+| `--docker-args <args>` | 追加のDockerフラグ。`$BOX_DOCKER_ARGS` を上書き |
 
 ## 環境変数
 
@@ -183,10 +202,10 @@ CLIフラグを完全に省略するためのデフォルト設定です。`.zsh
 ```bash
 # 全セッションにデフォルトのDockerフラグを設定
 export BOX_DOCKER_ARGS="--network host -v /data:/data:ro"
-box my-session
+box create my-session
 
 # 特定のセッションで --docker-args で上書き
-box my-session --docker-args "-e DEBUG=1"
+box create my-session --docker-args "-e DEBUG=1"
 ```
 
 ## シェル補完
@@ -208,14 +227,14 @@ eval "$(box config bash)"
 初回実行時、`git clone --local` でリポジトリの独立したコピーをワークスペースディレクトリに作成します。コンテナは完全に自己完結したgitリポジトリを取得します — 特別なマウントやentrypointスクリプトは不要です。ホストの作業ディレクトリは一切変更されません。
 
 - **独立したクローン** — 各セッションは `git clone --local` による完全なgitリポジトリを持ちます
-- **永続的なワークスペース** — `exit` してもファイルは保持され、`box <name>` で再開可能。セッションマネージャーから削除でクリーンアップ
+- **永続的なワークスペース** — `exit` してもファイルは保持され、`box resume <name>` で再開可能。`box remove` でクリーンアップ
 - **任意のイメージ・ユーザー** — rootおよび非rootコンテナイメージで動作
 
 | 観点 | 保護 |
 |--------|------------|
 | ホスト作業ツリー | 変更されない — ワークスペースは独立したクローン |
 | ワークスペース | `~/.box/workspaces/<name>/` からバインドマウント、停止・起動をまたいで永続化 |
-| セッションクリーンアップ | セッションマネージャーから削除でコンテナ、ワークスペース、セッションデータを削除 |
+| セッションクリーンアップ | `box remove` でコンテナ、ワークスペース、セッションデータを削除 |
 
 ## 設計上の判断
 
@@ -270,14 +289,14 @@ gitの隔離戦略はいくつか存在しますが、それぞれに問題が�
 Boxはクローンしたリポジトリの `origin` リモートを実際のURL（ローカルクローンパスではなく）に自動修正するため、`git push origin` がそのまま動作します。
 
 ```bash
-box my-feature --image ubuntu:latest -- bash
+box create my-feature --image ubuntu:latest -- bash
 
 # コンテナ内で
 ssh-add -l          # 鍵の一覧が表示されるはずです
 git push origin main
 
 # SSH転送を無効にする場合
-box my-feature --no-ssh -- bash
+box create my-feature --no-ssh -- bash
 ```
 
 ## Claude Code連携
@@ -285,13 +304,13 @@ box my-feature --no-ssh -- bash
 Boxは[Claude Code](https://docs.anthropic.com/en/docs/claude-code)の理想的なパートナーです。Boxセッション内でClaude Codeを実行すれば、リスクのある変更、ブランチの実験、テストの実行 — すべてホストから完全に隔離された環境で行えます。
 
 ```bash
-box ai-experiment --image node:20 -- claude
+box create ai-experiment --image node:20 -- claude
 ```
 
 デタッチモードでバックグラウンド実行：
 
 ```bash
-box ai-experiment -d --image node:20 -- claude -p "refactor the auth module"
+box create ai-experiment -d --image node:20 -- claude -p "refactor the auth module"
 ```
 
 エージェントが行うすべての操作はコンテナ内に留まります。完了したらセッションを削除すれば消えます。

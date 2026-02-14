@@ -14,6 +14,8 @@ pub fn ensure_workspace(home: &str, name: &str, project_dir: &str) -> Result<Str
     let git_dir = dir_path.join(".git");
 
     if !Path::new(&git_dir).exists() {
+        eprintln!("\x1b[2mrunning clone command:\x1b[0m");
+        eprintln!("git clone --local {} {}", project_dir, dir);
         let status = Command::new("git")
             .args(["clone", "--local", project_dir, &dir])
             .status()?;
@@ -30,6 +32,8 @@ pub fn ensure_workspace(home: &str, name: &str, project_dir: &str) -> Result<Str
             if output.status.success() {
                 let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if !url.is_empty() {
+                    eprintln!("\x1b[2mrunning remote update:\x1b[0m");
+                    eprintln!("git remote set-url origin {}", url);
                     let _ = Command::new("git")
                         .args(["-C", &dir, "remote", "set-url", "origin", &url])
                         .status();
@@ -222,6 +226,8 @@ pub fn run_container(cfg: &DockerRunConfig) -> Result<i32> {
     }
 
     let args = build_run_args(cfg)?;
+    eprintln!("\x1b[2mrunning container:\x1b[0m");
+    eprintln!("docker {}", shell_words::join(&args));
 
     if cfg.detach {
         let output = Command::new("docker").args(&args).output()?;

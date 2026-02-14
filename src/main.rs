@@ -224,6 +224,20 @@ fn cmd_create(
         ssh,
     })?;
 
+    eprintln!("\x1b[2msession:\x1b[0m {}", cfg.name);
+    eprintln!("\x1b[2mimage:\x1b[0m {}", cfg.image);
+    eprintln!("\x1b[2mmount:\x1b[0m {}", cfg.mount_path);
+    if cfg.ssh {
+        eprintln!("\x1b[2mssh:\x1b[0m true");
+    }
+    if !cfg.command.is_empty() {
+        eprintln!("\x1b[2mcommand:\x1b[0m {}", shell_words::join(&cfg.command));
+    }
+    if !docker_args.is_empty() {
+        eprintln!("\x1b[2mdocker args:\x1b[0m {}", docker_args);
+    }
+    eprintln!();
+
     let sess = session::Session::from(cfg);
     session::save(&sess)?;
 

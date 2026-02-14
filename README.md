@@ -58,7 +58,7 @@ Pre-built binaries are available on the [GitHub Releases](https://github.com/yus
 ## Quick Start
 
 ```bash
-box my-feature --image ubuntu:latest -- bash
+box create my-feature --image ubuntu:latest -- bash
 # You're now in an isolated container with full git access
 ```
 
@@ -96,9 +96,9 @@ With those env vars set, every session uses your custom image with zero flags:
 
 ```bash
 # That's it. From now on:
-box feature-1
-box bugfix-auth
-box experiment-v2
+box create feature-1
+box create bugfix-auth
+box create experiment-v2
 # Each gets an isolated sandbox with your full toolchain.
 ```
 
@@ -106,10 +106,12 @@ box experiment-v2
 
 ```bash
 box                                               Session manager (TUI)
-box <name> [options] [-- cmd...]                  Create or resume a session
-box <name> -d [-- cmd...]                         Run detached (background)
-box <name>                                        Attach to running session
-box config zsh|bash                                Output shell completions
+box create <name> [options] [-- cmd...]           Create a new session
+box resume <name> [-d] [--docker-args <args>]     Resume an existing session
+box stop <name>                                   Stop a running session
+box remove <name>                                 Remove a session
+box path <name>                                   Print workspace path
+box config zsh|bash                               Output shell completions
 box upgrade                                       Upgrade to latest version
 ```
 
@@ -130,45 +132,62 @@ Running `box` with no arguments opens an interactive TUI:
 - **d** to delete the highlighted session (with confirmation)
 - **q** / **Esc** to quit
 
-### Create or resume a session
+### Create a session
 
 ```bash
-# Default: alpine:latest image, sh shell, current directory
-box my-feature
+# Default: alpine:latest image, current directory
+box create my-feature
 
-# Custom image with bash (only used when creating)
-box my-feature --image ubuntu:latest -- bash
+# Custom image with bash
+box create my-feature --image ubuntu:latest -- bash
 
 # Extra Docker flags (env vars, volumes, network, etc.)
-box my-feature --docker-args "-e KEY=VALUE -v /host:/container --network host"
+box create my-feature --docker-args "-e KEY=VALUE -v /host:/container --network host"
 
-# If session exists, it resumes with original configuration
-# If session doesn't exist, it creates a new one
-box my-feature
+# Create in detached mode (background)
+box create my-feature -d -- claude -p "do something"
 ```
 
-Sessions are automatically created if they don't exist. If a session already exists, create-time options like `--image` are ignored when resuming. Runtime options like `--docker-args` and `--no-ssh` apply on every run.
-
-### Detach mode
+### Resume a session
 
 ```bash
-# Run in background
-box my-feature -d -- claude -p "do something"
+# Resume an existing session
+box resume my-feature
 
-# Attach to a running session
-box my-feature
+# Resume in detached mode
+box resume my-feature -d
 
 # Detach without stopping: Ctrl+P, Ctrl+Q
 ```
 
+### Stop and remove
+
+```bash
+# Stop a running session
+box stop my-feature
+
+# Remove a stopped session (container, workspace, and session data)
+box remove my-feature
+```
+
 ## Options
+
+### `box create`
 
 | Option | Description |
 |--------|-------------|
 | `-d` | Run container in the background (detached) |
-| `--image <image>` | Docker image to use (default: `alpine:latest`) - only used when creating |
+| `--image <image>` | Docker image to use (default: `alpine:latest`) |
 | `--docker-args <args>` | Extra Docker flags (e.g. `-e KEY=VALUE`, `-v /host:/container`). Overrides `$BOX_DOCKER_ARGS` |
 | `--no-ssh` | Disable SSH agent forwarding (enabled by default) |
+| `-- cmd...` | Command to run in container (default: `$BOX_DEFAULT_CMD` if set) |
+
+### `box resume`
+
+| Option | Description |
+|--------|-------------|
+| `-d` | Resume in the background (detached) |
+| `--docker-args <args>` | Extra Docker flags. Overrides `$BOX_DOCKER_ARGS` |
 
 ## Environment Variables
 
@@ -183,10 +202,10 @@ These let you configure defaults so you can skip CLI flags entirely. Set them in
 ```bash
 # Set default Docker flags for all sessions
 export BOX_DOCKER_ARGS="--network host -v /data:/data:ro"
-box my-session
+box create my-session
 
 # Override with --docker-args for a specific session
-box my-session --docker-args "-e DEBUG=1"
+box create my-session --docker-args "-e DEBUG=1"
 ```
 
 ## Shell Completions
@@ -208,14 +227,14 @@ After reloading your shell, `box [tab]` will show available sessions and subcomm
 On first run, `git clone --local` creates an independent copy of your repo in the workspace directory. The container gets a fully self-contained git repo — no special mounts or entrypoint scripts needed. Your host working directory is never modified.
 
 - **Independent clone** — Each session gets its own complete git repo via `git clone --local`
-- **Persistent workspace** — Files survive `exit` and `box <name>` resume; cleaned up when deleted via the session manager
+- **Persistent workspace** — Files survive `exit` and `box resume <name>` picks up where you left off; cleaned up with `box remove`
 - **Any image, any user** — Works with root and non-root container images
 
 | Aspect | Protection |
 |--------|------------|
 | Host working tree | Never modified — workspace is an independent clone |
 | Workspace | Bind-mounted from `~/.box/workspaces/<name>/`, persists across stop/start |
-| Session cleanup | Delete via session manager removes container, workspace, and session data |
+| Session cleanup | `box remove` deletes container, workspace, and session data |
 
 ## Design Decisions
 
@@ -270,14 +289,14 @@ Plain Docker gives full control while box handles the isolation and lifecycle.
 Box also re-points the cloned repo's `origin` remote to the real URL (not the local clone path), so `git push origin` works out of the box.
 
 ```bash
-box my-feature --image ubuntu:latest -- bash
+box create my-feature --image ubuntu:latest -- bash
 
 # Inside the container
 ssh-add -l          # should list your keys
 git push origin main
 
 # To disable SSH forwarding
-box my-feature --no-ssh -- bash
+box create my-feature --no-ssh -- bash
 ```
 
 ## Security Note
@@ -289,13 +308,13 @@ The `--docker-args` flag and `BOX_DOCKER_ARGS` environment variable pass argumen
 Box is the ideal companion for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Run Claude Code inside a box session and let it make risky changes, experiment with branches, and run tests — all fully isolated from your host.
 
 ```bash
-box ai-experiment --image node:20 -- claude
+box create ai-experiment --image node:20 -- claude
 ```
 
 Run in the background with detach mode:
 
 ```bash
-box ai-experiment -d --image node:20 -- claude -p "refactor the auth module"
+box create ai-experiment -d --image node:20 -- claude -p "refactor the auth module"
 ```
 
 Everything the agent does stays inside the container. When you're done, delete the session and it's gone.
