@@ -15,7 +15,7 @@ use std::path::Path;
 #[command(
     name = "box",
     about = "Sandboxed Docker environments for git repos",
-    after_help = "Examples:\n  box                                         # interactive session manager\n  box my-feature                               # shortcut for `box create my-feature`\n  box create my-feature                        # create a new session\n  box create my-feature --image ubuntu -- bash # create with options\n  box resume my-feature                        # resume a session\n  box resume my-feature -d                     # resume in background\n  box stop my-feature                          # stop a running session\n  box remove my-feature                        # remove a session\n  box path my-feature                          # print workspace path\n  box upgrade                                  # self-update"
+    after_help = "Examples:\n  box                                         # interactive session manager\n  box my-feature                               # shortcut for `box create my-feature`\n  box create my-feature                        # create a new session\n  box create my-feature --image ubuntu -- bash # create with options\n  box resume my-feature                        # resume a session\n  box resume my-feature -d                     # resume in background\n  box stop my-feature                          # stop a running session\n  box exec my-feature -- ls -la                # run a command in a session\n  box remove my-feature                        # remove a session\n  box path my-feature                          # print workspace path\n  box upgrade                                  # self-update"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -32,6 +32,8 @@ enum Commands {
     Remove(RemoveArgs),
     /// Stop a running session
     Stop(StopArgs),
+    /// Run a command in a running session
+    Exec(ExecArgs),
     /// Print workspace path for a session
     Path {
         /// Session name
@@ -103,6 +105,16 @@ struct StopArgs {
     name: String,
 }
 
+#[derive(clap::Args, Debug)]
+struct ExecArgs {
+    /// Session name
+    name: String,
+
+    /// Command to run in the container
+    #[arg(last = true, required = true)]
+    cmd: Vec<String>,
+}
+
 #[derive(Subcommand, Debug)]
 enum ConfigShell {
     /// Output Zsh completions
@@ -143,6 +155,7 @@ fn main() {
         }
         Some(Commands::Remove(args)) => cmd_remove(&args.name),
         Some(Commands::Stop(args)) => cmd_stop(&args.name),
+        Some(Commands::Exec(args)) => cmd_exec(&args.name, &args.cmd),
         Some(Commands::Path { name }) => cmd_path(&name),
         Some(Commands::Upgrade) => cmd_upgrade(),
         Some(Commands::Config { shell }) => match shell {
@@ -372,6 +385,22 @@ fn cmd_stop(name: &str) -> Result<i32> {
     docker::stop_container(name)
 }
 
+fn cmd_exec(name: &str, cmd: &[String]) -> Result<i32> {
+    session::validate_name(name)?;
+
+    if !session::session_exists(name)? {
+        bail!("Session '{}' not found.", name);
+    }
+
+    docker::check()?;
+
+    if !docker::container_is_running(name) {
+        bail!("Session '{}' is not running.", name);
+    }
+
+    docker::exec_container(name, cmd)
+}
+
 fn cmd_path(name: &str) -> Result<i32> {
     session::validate_name(name)?;
     if !session::session_exists(name)? {
@@ -431,6 +460,11 @@ _box() {{
                         '--docker-args=[Extra Docker flags]:args' \
                         '1:session name:__box_sessions'
                     ;;
+                exec)
+                    _arguments \
+                        '1:session name:__box_sessions' \
+                        '*:command:'
+                    ;;
                 remove|stop|path)
                     if (( CURRENT == 2 )); then
                         __box_sessions
@@ -459,8 +493,8 @@ fn cmd_config_bash() -> Result<i32> {
     local cur prev words cword
     _init_completion || return
 
-    local subcommands="create resume remove stop path upgrade config"
-    local session_cmds="resume remove stop path"
+    local subcommands="create resume remove stop exec path upgrade config"
+    local session_cmds="resume remove stop exec path"
 
     if [[ $cword -eq 1 ]]; then
         local sessions=""
@@ -496,6 +530,15 @@ fn cmd_config_bash() -> Result<i32> {
                     fi
                     ;;
             esac
+            ;;
+        exec)
+            if [[ $cword -eq 2 ]]; then
+                local sessions=""
+                if [[ -d "$HOME/.box/sessions" ]]; then
+                    sessions=$(command ls "$HOME/.box/sessions" 2>/dev/null)
+                fi
+                COMPREPLY=($(compgen -W "$sessions" -- "$cur"))
+            fi
             ;;
         remove|stop|path)
             if [[ $cword -eq 2 ]]; then
@@ -847,6 +890,32 @@ mod tests {
     #[test]
     fn test_stop_rejects_flags() {
         let result = try_parse(&["stop", "my-session", "-d"]);
+        assert!(result.is_err());
+    }
+
+    // -- exec subcommand --
+
+    #[test]
+    fn test_exec_parses() {
+        let cli = parse(&["exec", "my-session", "--", "ls", "-la"]);
+        match cli.command {
+            Some(Commands::Exec(args)) => {
+                assert_eq!(args.name, "my-session");
+                assert_eq!(args.cmd, vec!["ls", "-la"]);
+            }
+            other => panic!("expected Exec, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_exec_requires_name() {
+        let result = try_parse(&["exec"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_exec_requires_command() {
+        let result = try_parse(&["exec", "my-session"]);
         assert!(result.is_err());
     }
 

@@ -47,7 +47,7 @@ pub fn sessions_dir() -> Result<PathBuf> {
 }
 
 const RESERVED_NAMES: &[&str] = &[
-    "create", "resume", "remove", "stop", "upgrade", "path", "config",
+    "create", "resume", "remove", "stop", "exec", "upgrade", "path", "config",
 ];
 
 pub fn validate_name(name: &str) -> Result<()> {

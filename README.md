@@ -110,6 +110,7 @@ box <name>                                        Shortcut for `box create <name
 box create <name> [options] [-- cmd...]           Create a new session
 box resume <name> [-d] [--docker-args <args>]     Resume an existing session
 box stop <name>                                   Stop a running session
+box exec <name> -- <cmd...>                       Run a command in a running session
 box remove <name>                                 Remove a session
 box path <name>                                   Print workspace path
 box config zsh|bash                               Output shell completions
@@ -162,6 +163,16 @@ box resume my-feature
 box resume my-feature -d
 
 # Detach without stopping: Ctrl+P, Ctrl+Q
+```
+
+### Run a command in a session
+
+```bash
+# Run a command in a running session
+box exec my-feature -- ls -la
+
+# Open a shell in a running session
+box exec my-feature -- bash
 ```
 
 ### Stop and remove
