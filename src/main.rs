@@ -15,7 +15,7 @@ use std::path::Path;
 #[command(
     name = "box",
     about = "Sandboxed Docker environments for git repos",
-    after_help = "Examples:\n  box                                         # interactive session manager\n  box my-feature                               # shortcut for `box create my-feature`\n  box create my-feature                        # create a new session\n  box create my-feature --image ubuntu -- bash # create with options\n  box resume my-feature                        # resume a session\n  box resume my-feature -d                     # resume in background\n  box stop my-feature                          # stop a running session\n  box exec my-feature -- ls -la                # run a command in a session\n  box remove my-feature                        # remove a session\n  box path my-feature                          # print workspace path\n  box upgrade                                  # self-update"
+    after_help = "Examples:\n  box                                         # interactive session manager\n  box my-feature                               # shortcut for `box create my-feature`\n  box create my-feature                        # create a new session\n  box create my-feature --image ubuntu -- bash # create with options\n  box resume my-feature                        # resume a session\n  box resume my-feature -d                     # resume in background\n  box stop my-feature                          # stop a running session\n  box exec my-feature -- ls -la                # run a command in a session\n  box list                                     # list all sessions\n  box list -q --running                        # names of running sessions\n  box remove my-feature                        # remove a session\n  box path my-feature                          # print workspace path\n  box upgrade                                  # self-update"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -34,6 +34,9 @@ enum Commands {
     Stop(StopArgs),
     /// Run a command in a running session
     Exec(ExecArgs),
+    /// List sessions
+    #[command(alias = "ls")]
+    List(ListArgs),
     /// Print workspace path for a session
     Path {
         /// Session name
@@ -115,6 +118,19 @@ struct ExecArgs {
     cmd: Vec<String>,
 }
 
+#[derive(clap::Args, Debug)]
+struct ListArgs {
+    /// Show only running sessions
+    #[arg(long, short)]
+    running: bool,
+    /// Show only stopped sessions
+    #[arg(long, short)]
+    stopped: bool,
+    /// Only print session names
+    #[arg(long, short)]
+    quiet: bool,
+}
+
 #[derive(Subcommand, Debug)]
 enum ConfigShell {
     /// Output Zsh completions
@@ -156,6 +172,7 @@ fn main() {
         Some(Commands::Remove(args)) => cmd_remove(&args.name),
         Some(Commands::Stop(args)) => cmd_stop(&args.name),
         Some(Commands::Exec(args)) => cmd_exec(&args.name, &args.cmd),
+        Some(Commands::List(args)) => cmd_list_sessions(&args),
         Some(Commands::Path { name }) => cmd_path(&name),
         Some(Commands::Upgrade) => cmd_upgrade(),
         Some(Commands::Config { shell }) => match shell {
@@ -213,6 +230,90 @@ fn cmd_list() -> Result<i32> {
         } => cmd_create(&name, image, &docker_args, command, true, false),
         tui::TuiAction::Quit => Ok(0),
     }
+}
+
+fn cmd_list_sessions(args: &ListArgs) -> Result<i32> {
+    let mut sessions = session::list()?;
+
+    docker::check()?;
+    let running = docker::running_sessions();
+    for s in &mut sessions {
+        s.running = running.contains(&s.name);
+    }
+
+    if args.running {
+        sessions.retain(|s| s.running);
+    }
+    if args.stopped {
+        sessions.retain(|s| !s.running);
+    }
+
+    if args.quiet {
+        for s in &sessions {
+            println!("{}", s.name);
+        }
+        return Ok(0);
+    }
+
+    if sessions.is_empty() {
+        println!("No sessions found.");
+        return Ok(0);
+    }
+
+    let home = config::home_dir().unwrap_or_default();
+
+    // Compute column widths
+    let name_w = sessions
+        .iter()
+        .map(|s| s.name.len())
+        .max()
+        .unwrap_or(0)
+        .max(4);
+    let status_w = 7; // "running" or "stopped"
+    let image_w = sessions
+        .iter()
+        .map(|s| s.image.len())
+        .max()
+        .unwrap_or(0)
+        .max(5);
+
+    let shorten_home = |p: &str| -> String {
+        if !home.is_empty() {
+            if let Some(rest) = p.strip_prefix(&home) {
+                return format!("~{}", rest);
+            }
+        }
+        p.to_string()
+    };
+
+    let project_w = sessions
+        .iter()
+        .map(|s| shorten_home(&s.project_dir).len())
+        .max()
+        .unwrap_or(0)
+        .max(7);
+    let command_w = sessions
+        .iter()
+        .map(|s| s.command.len())
+        .max()
+        .unwrap_or(0)
+        .max(7);
+
+    println!(
+        "{:<name_w$}  {:<status_w$}  {:<image_w$}  {:<project_w$}  {:<command_w$}  CREATED",
+        "NAME", "STATUS", "IMAGE", "PROJECT", "COMMAND",
+    );
+
+    for s in &sessions {
+        let status = if s.running { "running" } else { "stopped" };
+        let project = shorten_home(&s.project_dir);
+        println!(
+            "{:<name_w$}  {:<status_w$}  {:<image_w$}  {:<project_w$}  {:<command_w$}  {}",
+            s.name, status, s.image, project, s.command, s.created_at,
+        );
+    }
+
+    Ok(0)
 }
 
 fn cmd_create(
@@ -465,6 +566,15 @@ _box() {{
                         '1:session name:__box_sessions' \
                         '*:command:'
                     ;;
+                list|ls)
+                    _arguments \
+                        '--running[Show only running sessions]' \
+                        '-r[Show only running sessions]' \
+                        '--stopped[Show only stopped sessions]' \
+                        '-s[Show only stopped sessions]' \
+                        '--quiet[Only print session names]' \
+                        '-q[Only print session names]'
+                    ;;
                 remove|stop|path)
                     if (( CURRENT == 2 )); then
                         __box_sessions
@@ -493,7 +603,7 @@ fn cmd_config_bash() -> Result<i32> {
     local cur prev words cword
     _init_completion || return
 
-    local subcommands="create resume remove stop exec path upgrade config"
+    local subcommands="create resume remove stop exec list path upgrade config"
     local session_cmds="resume remove stop exec path"
 
     if [[ $cword -eq 1 ]]; then
@@ -539,6 +649,13 @@ fn cmd_config_bash() -> Result<i32> {
                 fi
                 COMPREPLY=($(compgen -W "$sessions" -- "$cur"))
             fi
+            ;;
+        list|ls)
+            case "$cur" in
+                -*)
+                    COMPREPLY=($(compgen -W "--running -r --stopped -s --quiet -q" -- "$cur"))
+                    ;;
+            esac
             ;;
         remove|stop|path)
             if [[ $cword -eq 2 ]]; then
@@ -977,6 +1094,101 @@ mod tests {
     #[test]
     fn test_config_requires_shell() {
         let result = try_parse(&["config"]);
+        assert!(result.is_err());
+    }
+
+    // -- list subcommand --
+
+    #[test]
+    fn test_list_no_flags() {
+        let cli = parse(&["list"]);
+        match cli.command {
+            Some(Commands::List(args)) => {
+                assert!(!args.running);
+                assert!(!args.stopped);
+                assert!(!args.quiet);
+            }
+            other => panic!("expected List, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_list_running_flag() {
+        let cli = parse(&["list", "--running"]);
+        match cli.command {
+            Some(Commands::List(args)) => {
+                assert!(args.running);
+                assert!(!args.stopped);
+            }
+            other => panic!("expected List, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_list_stopped_flag() {
+        let cli = parse(&["list", "--stopped"]);
+        match cli.command {
+            Some(Commands::List(args)) => {
+                assert!(!args.running);
+                assert!(args.stopped);
+            }
+            other => panic!("expected List, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_list_quiet_flag() {
+        let cli = parse(&["list", "-q"]);
+        match cli.command {
+            Some(Commands::List(args)) => {
+                assert!(args.quiet);
+            }
+            other => panic!("expected List, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_list_combined_flags() {
+        let cli = parse(&["list", "-q", "--running"]);
+        match cli.command {
+            Some(Commands::List(args)) => {
+                assert!(args.quiet);
+                assert!(args.running);
+                assert!(!args.stopped);
+            }
+            other => panic!("expected List, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_list_short_flags() {
+        let cli = parse(&["list", "-r", "-s", "-q"]);
+        match cli.command {
+            Some(Commands::List(args)) => {
+                assert!(args.running);
+                assert!(args.stopped);
+                assert!(args.quiet);
+            }
+            other => panic!("expected List, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_list_alias_ls() {
+        let cli = parse(&["ls"]);
+        match cli.command {
+            Some(Commands::List(args)) => {
+                assert!(!args.running);
+                assert!(!args.stopped);
+                assert!(!args.quiet);
+            }
+            other => panic!("expected List, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_list_rejects_positional_args() {
+        let result = try_parse(&["list", "my-session"]);
         assert!(result.is_err());
     }
 
