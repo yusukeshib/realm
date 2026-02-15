@@ -312,12 +312,30 @@ pub fn start_container(name: &str) -> Result<i32> {
 }
 
 pub fn attach_container(name: &str) -> Result<i32> {
-    let status = Command::new("docker")
+    let mut child = Command::new("docker")
         .args(["attach", &format!("box-{}", name)])
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
-        .status()?;
+        .spawn()?;
+
+    // After attaching, the container's PTY may retain stale dimensions from a
+    // previous session. Send SIGWINCH to the docker-attach process after a
+    // short delay so Docker re-reads the current terminal size and pushes a
+    // resize event to the container. This eliminates the need for a manual
+    // pane resize to recover rendering.
+    #[cfg(unix)]
+    {
+        let pid = child.id();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGWINCH);
+            }
+        });
+    }
+
+    let status = child.wait()?;
     restore_terminal();
 
     Ok(status.code().unwrap_or(1))

@@ -1,6 +1,6 @@
 [package]
 name = "box-cli"
-version = "0.0.8"
+version = "0.0.9"
 edition = "2021"
 description = "Sandboxed Docker environments for git repos"
 license = "MIT"
@@ -15,6 +15,7 @@ clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1"
 chrono = { version = "0.4", features = ["clock"], default-features = false }
 shell-words = "1"
+libc = "0.2"
 ratatui = "0.29"
 crossterm = "0.28"
 self_update = { version = "0.42", default-features = false, features = ["rustls"] }
