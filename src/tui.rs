@@ -17,6 +17,7 @@ pub enum TuiAction {
         image: Option<String>,
         command: Option<Vec<String>>,
     },
+    Cd(String),
     Quit,
 }
 
@@ -242,7 +243,7 @@ where
                     } else if on_new_row || items.is_empty() {
                         Line::from("[Enter] New  [q] Quit").style(Style::default().dim())
                     } else {
-                        Line::from("[Enter] Resume  [d] Delete  [q] Quit")
+                        Line::from("[Enter] Resume  [c] Cd  [d] Delete  [q] Quit")
                             .style(Style::default().dim())
                     }
                 }
@@ -296,6 +297,15 @@ where
                                     let name = items[i - 1].name.clone();
                                     clear_viewport(&mut terminal, viewport_height)?;
                                     return Ok(TuiAction::Resume(name));
+                                }
+                            }
+                        }
+                        KeyCode::Char('c') => {
+                            if let Some(i) = state.selected() {
+                                if i != new_row_idx {
+                                    let name = items[i - 1].name.clone();
+                                    clear_viewport(&mut terminal, viewport_height)?;
+                                    return Ok(TuiAction::Cd(name));
                                 }
                             }
                         }

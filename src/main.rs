@@ -15,7 +15,7 @@ use std::path::Path;
 #[command(
     name = "box",
     about = "Sandboxed Docker environments for git repos",
-    after_help = "Examples:\n  box                                         # interactive session manager\n  box my-feature                               # shortcut for `box create my-feature`\n  box create my-feature                        # create a new session\n  box create my-feature --image ubuntu -- bash # create with options\n  box resume my-feature                        # resume a session\n  box resume my-feature -d                     # resume in background\n  box stop my-feature                          # stop a running session\n  box exec my-feature -- ls -la                # run a command in a session\n  box list                                     # list all sessions\n  box list -q --running                        # names of running sessions\n  box remove my-feature                        # remove a session\n  box path my-feature                          # print workspace path\n  box upgrade                                  # self-update"
+    after_help = "Examples:\n  box                                         # interactive session manager\n  box my-feature                               # shortcut for `box create my-feature`\n  box create my-feature                        # create a new session\n  box create my-feature --image ubuntu -- bash # create with options\n  box resume my-feature                        # resume a session\n  box resume my-feature -d                     # resume in background\n  box stop my-feature                          # stop a running session\n  box exec my-feature -- ls -la                # run a command in a session\n  box list                                     # list all sessions\n  box list -q --running                        # names of running sessions\n  box remove my-feature                        # remove a session\n  box cd my-feature                            # print project directory\n  box path my-feature                          # print workspace path\n  box upgrade                                  # self-update"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -37,6 +37,11 @@ enum Commands {
     /// List sessions
     #[command(alias = "ls")]
     List(ListArgs),
+    /// Print the host project directory for a session
+    Cd {
+        /// Session name
+        name: String,
+    },
     /// Print workspace path for a session
     Path {
         /// Session name
@@ -173,6 +178,7 @@ fn main() {
         Some(Commands::Stop(args)) => cmd_stop(&args.name),
         Some(Commands::Exec(args)) => cmd_exec(&args.name, &args.cmd),
         Some(Commands::List(args)) => cmd_list_sessions(&args),
+        Some(Commands::Cd { name }) => cmd_cd(&name),
         Some(Commands::Path { name }) => cmd_path(&name),
         Some(Commands::Upgrade) => cmd_upgrade(),
         Some(Commands::Config { shell }) => match shell {
@@ -207,6 +213,14 @@ fn main() {
     }
 }
 
+fn output_cd_path(path: &str) {
+    if let Ok(cd_file) = std::env::var("BOX_CD_FILE") {
+        let _ = fs::write(cd_file, path);
+    } else {
+        println!("{}", path);
+    }
+}
+
 fn cmd_list() -> Result<i32> {
     let mut sessions = session::list()?;
 
@@ -232,6 +246,7 @@ fn cmd_list() -> Result<i32> {
             image,
             command,
         } => cmd_create(&name, image, &docker_args, command, true, false),
+        tui::TuiAction::Cd(name) => cmd_cd(&name),
         tui::TuiAction::Quit => Ok(0),
     }
 }
@@ -506,6 +521,17 @@ fn cmd_exec(name: &str, cmd: &[String]) -> Result<i32> {
     docker::exec_container(name, cmd)
 }
 
+fn cmd_cd(name: &str) -> Result<i32> {
+    session::validate_name(name)?;
+    if !session::session_exists(name)? {
+        bail!("Session '{}' not found.", name);
+    }
+    let home = config::home_dir()?;
+    let path = Path::new(&home).join(".box").join("workspaces").join(name);
+    output_cd_path(&path.to_string_lossy());
+    Ok(0)
+}
+
 fn cmd_path(name: &str) -> Result<i32> {
     session::validate_name(name)?;
     if !session::session_exists(name)? {
@@ -579,7 +605,7 @@ _box() {{
                         '--quiet[Only print session names]' \
                         '-q[Only print session names]'
                     ;;
-                remove|stop|path)
+                remove|stop|path|cd)
                     if (( CURRENT == 2 )); then
                         __box_sessions
                     fi
@@ -596,6 +622,20 @@ _box() {{
     esac
 }}
 compdef _box box
+
+box() {{
+    local __box_cd_file
+    __box_cd_file=$(mktemp "/tmp/.box-cd.XXXXXX")
+    BOX_CD_FILE="$__box_cd_file" command box "$@"
+    local __box_exit=$?
+    if [[ -s "$__box_cd_file" ]]; then
+        local __box_dir
+        __box_dir=$(<"$__box_cd_file")
+        cd "$__box_dir"
+    fi
+    rm -f "$__box_cd_file"
+    return $__box_exit
+}}
 "#
     );
     Ok(0)
@@ -607,8 +647,8 @@ fn cmd_config_bash() -> Result<i32> {
     local cur prev words cword
     _init_completion || return
 
-    local subcommands="create resume remove stop exec list path upgrade config"
-    local session_cmds="resume remove stop exec path"
+    local subcommands="create resume remove stop exec list cd path upgrade config"
+    local session_cmds="resume remove stop exec cd path"
 
     if [[ $cword -eq 1 ]]; then
         local sessions=""
@@ -661,7 +701,7 @@ fn cmd_config_bash() -> Result<i32> {
                     ;;
             esac
             ;;
-        remove|stop|path)
+        remove|stop|path|cd)
             if [[ $cword -eq 2 ]]; then
                 local sessions=""
                 if [[ -d "$HOME/.box/sessions" ]]; then
@@ -678,6 +718,20 @@ fn cmd_config_bash() -> Result<i32> {
     esac
 }}
 complete -F _box box
+
+box() {{
+    local __box_cd_file
+    __box_cd_file=$(mktemp "/tmp/.box-cd.XXXXXX")
+    BOX_CD_FILE="$__box_cd_file" command box "$@"
+    local __box_exit=$?
+    if [[ -s "$__box_cd_file" ]]; then
+        local __box_dir
+        __box_dir=$(<"$__box_cd_file")
+        cd "$__box_dir"
+    fi
+    rm -f "$__box_cd_file"
+    return $__box_exit
+}}
 "#
     );
     Ok(0)
@@ -1054,6 +1108,23 @@ mod tests {
     #[test]
     fn test_path_requires_name() {
         let result = try_parse(&["path"]);
+        assert!(result.is_err());
+    }
+
+    // -- cd subcommand --
+
+    #[test]
+    fn test_cd_subcommand_parses() {
+        let cli = parse(&["cd", "my-session"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cd { ref name }) if name == "my-session"
+        ));
+    }
+
+    #[test]
+    fn test_cd_requires_name() {
+        let result = try_parse(&["cd"]);
         assert!(result.is_err());
     }
 
